@@ -1,0 +1,387 @@
+
+%% Author: Azedine Zoufir
+%% Supervisor : Dr Andreas Bender
+%% All rights reserved
+%% 05/1/2015
+
+\documentclass{article}
+\usepackage[sc]{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{2}
+\usepackage{url}
+\usepackage{float}
+\usepackage[unicode=true,pdfusetitle,
+bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=2,
+breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=false]
+{hyperref}
+\hypersetup{
+pdfstartview={XYZ null null 1}}
+
+\begin{document}
+
+<<setup, include=FALSE, cache=FALSE>>=
+library(knitr)
+library(xtable)
+
+library(plyr)
+library(reshape2)
+## library(RColorBrewer)
+## library(gridExtra)
+library(gplots)
+library(ggplot2)
+library(GGally)
+library(org.Hs.eg.db)
+library(KEGG.db)
+library(topGO)
+library(stringr)
+
+# set global chunk options
+opts_chunk$set(fig.path='/home/az338/Dropbox/ucc_az/bioseek_Xitong_Ellen/figures/', fig.align='center', fig.show='hold')
+options(formatR.arrow=TRUE,width=90)
+
+# set working directory
+#setwd('C:/Users//Azedine/Dropbox/ucc_az/bioseek_Xitong_Ellen/') # Windows path
+#setwd('/home/az338/bioseek_Xitong_Ellen/NScore_cliques/') #Calculon path
+setwd('/home/az338/Dropbox/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/') # Rover path
+
+
+@
+
+{\huge Target prediction applied to the NScore clusters and GO annotation}\\
+
+This analysis aimed at predicting possible targets shared by the compounds in each NScore clique. For cliques correlating with a certain mode of action, Gene Ontology (GO) terms  were then associated with the top 5\% targets, to investigate the main functions in each clique. 
+
+\section{Methods}
+
+\subsection{Target Prediction and Ranking}
+
+Targets were predicted using \textbf{PIDGIN} (developed by Lewis Mervin
+(lhm30@cam.ac.uk)). This software predicts the likelihood of activity
+of input structures by combining a Naive Bayes algorithm with
+structure-activity features extracted from known actives/inactives of
+1080 human
+targets, in publicly available chemical databases.
+For each compound in a NScore cluster, each of the 1080 targets received a rank
+based on the predicted activity. 
+
+\subsection{Correlation between mode of action and clustering into cliques}
+
+For each chemical, in each clique, the predicted ranks were binarized so that a target got a value of 1 if pertaining to the top 50 predicted targets for this chemical (rank $\leq$ 50) and 0 otherwise. The binary distances (similar to Jaccard distance) between chemicals in each clique were averaged. If the average binary distance is small, this means that the top 50 targets predicted were close for each chemical in the clique. Cliques with an average binary distance higher than 0.3 were discarded. Indeed, a higher distance would imply that less than 35 targets ($=(1-0.3)50$ targets), on average, may be predicted for two chemicals in the clique. \\
+The correlation of the clustering into cliques for selected cliques with the mode of action of its chemicals was assessed by analysing the correlation of the top 50 predicted targets between compounds in these cliques. More precisely, the correlation of the top 50 ranks for the first chemical in a clique, were plotted against the ranks predicted for the same targets for other chemicals, in the same clique. In other words, if a correlation with the MoA exists, the ranks for the top 50 predicted targets for the first chemical in the clique, may be equal or close to the ranks for the same targets in all other chemicals of the same clique. 
+
+\subsection{Gene Set Enrichment Analysis}
+
+Averaged target ranks were used as scores in a gene set enrichment analysis
+performed using the Bioconductor package \textit{TopGO}. The gene set
+enrichment analysis allowed to select GO terms that were significantly associated
+with targets with smaller ranks. A target was considered important ('significant' in the results) if its rank was in the top 5\% ranks (corresponding roughly to the top 50 target). GO terms were tested for 
+significant associations with the top predicted ranks in cliques,  based on the Kolmogorov-Smirnov (KS) test. This test is based on a comparison of the
+distribution of ranks for target pertaining in a GO-Term group with
+the ranks for targets not pertaining in the group. The 'elim'
+algorithm was used to preferentially select GO Terms in the lower part of the GO tree, hence selecting the most specific GO Terms, and discarding the broader ones. GO Terms describing broad functions/locations
+such as 'Signalling' or 'Cytoplasm' were further removed by applying a cutoff
+on the  number of annotated targets (i.e the total number of targets
+associated with the GO Term in the full list of 1080 targets).  These GO Terms were eliminated if annotated with more than 1.5
+times the number of targets ranking at the top 5\% (81 targets). GO
+Terms were reported only if associated with at least 5 targets ranking in
+the top 5\% for chemicals in the clique, and with a KS p-value < 0.01.
+
+
+\section{Results}
+
+In total, seven cliques showed a moderate to strong correlation with the mode of action of the chemicals in the clique. Indeed, in these cliques, chemicals were identified with a close target ranking profile (for the top 50 targets). The selected cliques and the corresponding average binary distance (which evaluates the proximity of the top 50 target ranks for chemicals inside the clique) are reported in table ~\ref{cliqueTB}. \\
+
+<<CliqueAnalysis, echo=F, include=F>>=
+## Produce heatmap based on NScore
+## cliques and averaged rank
+
+# load target prediction ranks (incl. inactives)
+load('NSPred_ranks.Rdata')
+
+# load chem dataset
+chems=read.table('smiles_NScore_standardized.tab',h=T,sep='\t',comment.char='',quote='"')
+
+# get smiles which could not be loaded
+error_smiles=system('more error_struct.txt | grep structure',intern=T)
+error_smiles = unlist(llply(strsplit(error_smiles,'Cannot read structure : '),function(x) x[[2]]))
+error_smiles = str_trim(error_smiles)
+
+# TO BE PRINTED IN THE REPORT (+ mention 6 mol would not load)
+chems=chems[-match(error_smiles,chems$Structure),]
+
+
+# generate proper data sturctures for ggplot
+colnames(NScore_pred) = c('TARGET','UNIPROT',as.character(chems$SPID),'AVG.RANK')
+
+# target pred dataset
+targetPred = melt(NScore_pred[,-ncol(NScore_pred)],id=c('TARGET','UNIPROT'))
+colnames(targetPred) = c('TARGET','UNIPROT','COMPOUND','RANK')
+targetPred$CLUSTER = chems[match(targetPred$COMPOUND,chems$SPID),'CLUSTER_ID']
+
+# reorder the compound according to the hierarchical clustering
+#targetPred$TARGET = factor(targetPred$TARGET, levels=NScore_pred$TARGET[htmapInact$rowInd])
+
+
+# Compute sum of Jacquard distances between compounds in the same clique
+# Distances based on vectors of target bits: is ranked in top50 (1) or not (2)
+# Jdist = Sum of inter Bin. Distances / Number of compounds in clique
+Jdist=dlply(targetPred,.(CLUSTER),function(df) {
+    df$top50 = ifelse(df$RANK <= 50,1,0)
+    ranks = dlply(df,.(COMPOUND), function(df) return(df[order(df$TARGET),'top50']))
+    ranks = do.call('rbind',ranks)
+    return(sum(dist(ranks,method='binary'))/nrow(ranks)) 
+})
+
+@ 
+
+In each clique, a scatterplot comparing the first 50 ranks of the first chemical of the clique, with the corresponding ranks predicted on other chemicals of the clique. These cliques have only two or three chemicals. It is to be noted that the lower the binary distance in a clique, the more linear the relationship with the chemicals inside the clique (lower panels in Figures ~\ref{fig:ScatterplotClique37}, ~\ref{fig:ScatterplotClique45} or ~\ref{fig:ScatterplotClique20}). This may be also seen with the computed Pearson correlation coefficient (upper panels -  Figures ~\ref{fig:ScatterplotClique37}, ~\ref{fig:ScatterplotClique45} or ~\ref{fig:ScatterplotClique20} ). However, the range of the comparison matters more than the linear trend of the corresponding ranks. Indeed, even if the ranks do not show a linear trend, it is more important that most of the ranks were located in the bottom-left corner of the scatterplot (square corresponding to top first 50-100 ranks for both chemicals) and this may be observed in every scatterplot shown below (Figures ~\ref{fig:ScatterplotClique18} to ~\ref{fig:ScatterplotClique72}). The marginal distributions (diagonal panels,Figures ~\ref{fig:ScatterplotClique18} to ~\ref{fig:ScatterplotClique72}) also helps locating the ranks as compared to the top 50 ranks of the first chemical (top-left panel, inverted U-shape, Figures ~\ref{fig:ScatterplotClique18} to ~\ref{fig:ScatterplotClique72}). As compared to the first chemicals in each clique selected above, other chemicals have a positively skewed rank marginal distribution, with a mode below 50. This indicates that the top 50 predicted targets of the first chemicals in the cliques were also likely to rank in the top 50 for other chemicals in the clique, and nearly all these targets ranked in the top 100 for other chemicals. \\
+
+
+<<PrintCliques, echo=F, results='asis', warning=F>>=
+
+# Cliques with coherent MOA
+MOA.cliques = names(Jdist[Jdist > 0 & Jdist < .3])
+tb1 = data.frame(CLIQUE=MOA.cliques,"Averaged Binary Distance"=signif(unlist(Jdist[Jdist > 0 & Jdist < .3]),2))
+rownames(tb1) = NULL
+print(xtable(tb1,caption='Selected cliques based on consistent MOA of chemicals inside the cliques, and corresponding averaged Binary Jaccard distances.',label='cliqueTB'), include.rownames=FALSE)
+
+
+# MOA scatterplots for these cliques
+moa.scatt.cliques = dlply(subset(targetPred, CLUSTER %in% MOA.cliques),.(CLUSTER),function(df) {
+    ranks = dlply(df,.(COMPOUND), function(df) return(df[order(df$TARGET),'RANK']))
+    ranks = as.data.frame(t(do.call('rbind',ranks)))
+    ranks$top50_col1= as.factor(ifelse(ranks[,1] <= 50,T,F))
+    ranks = subset(ranks,top50_col1 == T,select=-top50_col1)
+    p =  ggpairs(ranks, title = paste('Clique no.',unique(df$CLUSTER),sep=''))
+    return(p)
+    ## ggpairs(ranks, lower = list(continuous = "smooth")) 
+    ## ggplot(df,aes(x=TARGET,y=COMPOUND,fill=log10(RANK))) +
+    ## geom_raster() +
+    ## scale_fill_gradient(low='red',high='white') +
+    ## ggtitle(paste('MOA - Chemicals in clique ',unique(df$CLUSTER),sep='')) +
+    ## theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+    #readLines(n=1)
+})
+
+@
+
+<<ScatterplotClique18, echo=F, results='asis', warning=F, fig.height=5, fig.width=5, fig.cap = 'Comparison of ranks (lower panels), corresponding correlation coefficient (upper panels), and marginal rank distributions (diagonal panels) for compounds inside Clique 18. The top 50 ranks of the first chemical in the clique (TX009647), were compared to ranks of other chemicals in the cliques, for the same targets (i.e 1 point correspond to one unique target). The upper panel shows the pearson correlation of the rank comparison.'>>=
+moa.scatt.cliques[[1]]
+@ 
+
+
+<<ScatterplotClique20, echo=F, results='asis', warning=F, fig.height=5, fig.width=5, fig.cap = 'Comparison of ranks (lower panels), corresponding correlation coefficient (upper panels), and marginal rank distributions (diagonal panel) for compounds inside Clique 20. The top 50 ranks of the first chemical in the clique (TX003980), were compared to ranks of other chemicals in the cliques, for the same targets. The upper panel shows the pearson correlation of the rank comparison.'>>=
+moa.scatt.cliques[[2]]
+@ 
+
+
+<<ScatterplotClique22, echo=F, results='asis', warning=F, fig.height=5, fig.width=5, fig.cap = 'Comparison of ranks (lower panels), corresponding correlation coefficient (upper panels) and marginal rank distributions (diagonal panel) for compounds inside Clique 22. The top 50 ranks of the first chemical in the clique (TX005086), were compared to ranks of other chemicals in the cliques, for the same targets. The upper panel shows the pearson correlation of the rank comparison.'>>=
+moa.scatt.cliques[[3]]
+@ 
+
+
+<<ScatterplotClique25, echo=F, results='asis', warning=F, fig.height=5, fig.width=5, fig.cap = 'Comparison of ranks (lower panels), corresponding correlation coefficient (upper panels) and marginal rank distributions (diagonal panel) for compounds inside Clique 25. The top 50 ranks of the first chemical in the clique (TX006784), were compared to ranks of other chemicals in the cliques, for the same targets. The upper panel shows the pearson correlation of the rank comparison.'>>=
+moa.scatt.cliques[[4]]
+@ 
+
+
+<<ScatterplotClique37, echo=F, results='asis', warning=F, fig.height=5, fig.width=5, fig.cap = 'Comparison of ranks (lower panels), corresponding correlation coefficient (upper panels) and marginal rank distributions (diagonal panel) for compounds inside Clique 37. The top 50 ranks of the first chemical in the clique (TX002449) , were compared to ranks of other chemicals in the cliques, for the same targets. The upper panel shows the pearson correlation of the rank comparison.'>>=
+moa.scatt.cliques[[5]]
+@ 
+
+
+<<ScatterplotClique45, echo=F, results='asis', warning=F, fig.height=5, fig.width=5, fig.cap = 'Comparison of ranks (lower panels), corresponding correlation coefficient (upper panels) and marginal rank distributions (diagonal panel) for compounds inside Clique 45. The top 50 ranks of the first chemical in the clique (TX008810), were compared to ranks of other chemicals in the cliques, for the same targets. The upper panel shows the pearson correlation of the rank comparison.'>>=
+moa.scatt.cliques[[6]]
+@ 
+
+
+
+<<ScatterplotClique72, echo=F, results='asis', warning=F, fig.height=5, fig.width=5, fig.cap = 'Comparison of ranks (lower panels), corresponding correlation coefficient (upper panels) and marginal rank distributions (diagonal panel) for compounds inside Clique 72. The top 50 ranks of the first chemical in the clique (TX008422), were compared to ranks of other chemicals in the cliques, for the same targets. The upper panel shows the pearson correlation of the rank comparison.'>>=
+moa.scatt.cliques[[7]]
+@ 
+
+<<PathwayAnalysis, results='asis', echo=F, warning=F>>=
+
+################
+# Kegg pathways
+################
+
+# this analysis lacks a comparison with a background... same pathways seems to come pu each time
+
+## pathways = dlply(targetPred, .(CLUSTER), function(df) {
+##     kegg_ids = select(org.Hs.eg.db,
+##         keys = as.character(subset(df,df$RANK <= 60)[,'UNIPROT']),
+##         keytype = "UNIPROT",
+##         columns = "PATH")
+##     pathwayCounts = sort(colSums(table(kegg_ids)),decreasing=T)
+##     names(pathwayCounts) = unlist(lapply(names(pathwayCounts), function(id) KEGGPATHID2NAME[[id]]))
+##     path.df=as.data.frame(pathwayCounts[pathwayCounts >= 10])
+##     colnames(path.df) = c('Number of targets')
+##     path.df[,1] = as.integer(path.df[,1])
+##     return(path.df)
+##     #print(xtable(path.df,caption='KEGG Pathways associated with at least 5 targets ranking in the top 5\\% (targets in table ~\\ref{targetTB}).',label='keggTB'), table.placement="H")
+## })
+
+@
+
+
+
+<<GSEA,echo=F,include=F, warning=F,eval=T>>=
+#########################################################
+# Gene Set Enrichment Analysis based on all average ranks
+#########################################################
+clique.GO = dlply(subset(targetPred, CLUSTER %in% MOA.cliques),.(CLUSTER),function(df) {
+    df = ddply(df,.(TARGET,UNIPROT),summarise, AVG.RANK = mean(RANK))
+    print(head(df))
+    ranks = df$AVG.RANK
+    names(ranks) = df$UNIPROT
+  
+    # Remove uniprot ids not matching an
+    # Entrez id in the org.hs.eg.db pkg
+    sel = select(org.Hs.eg.db,
+        keys=as.character(df$UNIPROT),
+        columns='ENTREZID',
+        keytype='UNIPROT')
+    sel = sel[-which(is.na(sel[,2])),]
+
+    # Replace Uniprot by Entrez ids
+    # (note that several entrez ids may match
+    # same uniprot id, in which case some entrez ids
+    # will get the same ranks)
+    ids = match(names(ranks),sel[,1])
+    ids = subset(ids,!is.na(ids))
+    ranks=ranks[sel[ids,1]]
+    names(ranks) = sel[ids,2]
+
+    # Rank Cutoff at which consider
+    # a target is interesting
+    cutoff = quantile(ranks,probs=.05)[[1]]
+
+    # Biological Process
+    BP_obj= new("topGOdata",
+        description = "BP based on ranks",
+        ontology = "BP",
+        allGenes = ranks,
+        geneSel = function(r) return(r < cutoff),
+        nodeSize = 5,
+        annot = annFUN.org,mapping="org.Hs.eg.db",ID='entrez')
+
+    BP_test=runTest(BP_obj, algorithm = "elim", statistic = "ks",scoreOrder = "increasing")
+    BP_Table=GenTable(BP_obj, KS=BP_test, topNodes=BP_test@geneData[['SigTerms']], numChar=48)
+#subset(BP_Table,KS<.05 & Significant >= 5 & Significant <=10)
+# IMPORTANT : note that the TOPNODES argument above is set to all Significant Terms on purpose, since we do not want to filter the GO Terms based on a ranking of p-values, but on a combination of cutoff on pvalue, number of significant targets and annotated targets (see methods)
+
+     # Molecular Function
+    MF_obj= new("topGOdata",
+        description = "MF based on ranks",
+        ontology = "MF",
+        allGenes = ranks,
+        geneSel = function(r) return(r < cutoff),
+        nodeSize = 5,
+        annot = annFUN.org,mapping="org.Hs.eg.db",ID='entrez')
+
+    MF_test=runTest(MF_obj, algorithm = "elim", statistic = "ks", scoreOrder = "increasing")
+    MF_Table=GenTable(MF_obj, KS=MF_test, topNodes =  MF_test@geneData[['SigTerms']], numChar=48)
+#subset(MF_Table,KS<.05 & Significant >= 5 & Significant <=10 )
+
+
+    # Cellular Component
+    CC_obj= new("topGOdata",
+        description = "CC based on ranks",
+        ontology = "CC",
+        allGenes = ranks,
+        geneSel = function(r) return(r < cutoff),
+        nodeSize = 5,
+        annot = annFUN.org,mapping="org.Hs.eg.db",ID='entrez')
+
+    CC_test=runTest(CC_obj, algorithm = "elim", statistic = "ks", scoreOrder = "increasing")
+    CC_Table=GenTable(CC_obj, KS=CC_test, topNodes =  CC_test@geneData[['SigTerms']], numChar=48)
+#subset(CC_Table,KS<.05 & Significant >= 5 & Significant <=10)
+    `
+    return(list(BP=BP_Table,MF=MF_Table,CC=CC_Table))
+})
+                  
+@
+
+<<GSEATabs,echo=F,results='asis', eval=T>>=
+
+# Number of target corresponding to top 5%
+n_target = floor(quantile(1:nrow(NScore_pred),probs=.05)[[1]]) 
+i = 1
+l_ply(clique.GO, function(GO.tb) {
+
+   # Reorder tables according to the number of targets ranking top 5%
+
+    BP_Table = GO.tb[[1]][order(GO.tb[[1]]$Significant,decreasing=T),]
+    MF_Table = GO.tb[[2]][order(GO.tb[[2]]$Significant,decreasing=T),]
+    CC_Table = GO.tb[[3]][order(GO.tb[[3]]$Significant,decreasing=T),]
+
+    BP_Table$Ontology = 'BP'
+    MF_Table$Ontology = 'MF'
+    CC_Table$Ontology = 'CC'
+    
+    # Print tables + legend + filter out GO Terms as in methods (above)
+    allTB = rbind(BP_Table,MF_Table,CC_Table)
+    print(xtable(subset(allTB,KS<=.01 & Significant >= 5 & Annotated <= 1.5*n_target,select=-c(GO.ID,Expected)),caption=paste('GO terms associated with targets predicted for chemicals in clique ',MOA.cliques[i],'. The "Annotated" field refers to the total number of targets annotated with the term (out of 1080 targets). The "Significant" field refers to the number of targets ranking in the top 5\\% . The "KS" field gives the p.value associated with the Kolmogorov-Smirnov test. The terms were ordered by number of targets ranking in the top 5\\%.',sep=''),label=paste('goTB',MOA.cliques[i],sep='')),include.rownames=FALSE)
+    i <<- i+1
+
+})
+
+
+@
+
+A gene set enrichment analysis based on the ranks inside each cliques was performed in order to obtain an overview of the biological processes, molecular functions, and cellular locations of the top ranking targets in the clique (averaged over all chemicals in the clique). In cliques 18 and 37, the gene ontology terms covered a wide range of functions: neurotransmitters (monoamine transport), physiological processes related to the transport of oxygen in the blood, locomotory and feeding behaviour and many other functions as well (Tables ~\ref{goTB18} \& ~\ref{goTB37}). Chemicals in clique 20 seem to target proteins involved in reproduction, apoptosis, catabolism and disassembly of extracelullar matrix (Table ~\ref{goTB20}). Chemicals in clique 22 and 45 may be associated with targets that are important for the development of reproductive structures and/or sex differentiation (Table ~\ref{goTB22} \& ~\ref{goTB45}). Moreover, targets predicted in clique 45 may be nuclear receptor as 11 targets ranking in the top 5\% for these chemicals were associated with the terms "steroid hormone receptor activity" and "sequence-specific DNA binding RNA polymerase II transcription factor activity" (Table  ~\ref{goTB45}). Targets predicted for chemicals in clique 25 are associated with acetylcholine and may be active in the regulation of vascular processes and hormone secretion processes (Table ~\ref{goTB25}). Eventually, clique 72 contained chemicals which putative targets were associated with steroid receptors potentially involved in many processes (Table ~\ref{goTB72}) such as those identified in cliques 18 and 37.
+
+
+<<PrintTargets,echo=F, eval=F>>=
+printTargets = function(obj,table,term) {
+    # get go id matching GO term
+    goid = table[grep(term,table$Term),'GO.ID']
+    # Get genes matching GO term
+    ids = ls(obj@graph@nodeData@data[[goid]]$genes)
+    # Get target uniprots, symbol and names
+    tgs = select(org.Hs.eg.db,
+        keys = ids,
+        columns=c("SYMBOL","GENENAME","UNIPROT"),
+        keytype="ENTREZID")
+    # Get index in top 5% ranking results
+    idx = match(tgs$UNIPROT,res[order(res[,35]),][1:n_target,2])
+    # Get rank
+    rank = idx[which(!is.na(idx))]
+    # Get indices in the tgs table
+    idx = which(!is.na(idx))
+    # Return table to print
+    return(data.frame(tgs[idx,],RANK=rank))
+}
+@
+
+
+<<BP_Targets, echo=F, results='asis',eval=F>>=
+print(xtable(printTargets(BP_obj,BP_Table,'^regulation of neurogenesis$'),caption='Top 5\\% ranking targets associated with "Regulation of neurogenesis"',label='neuroGO'),table.placement="H",include.rownames=FALSE)
+print(xtable(printTargets(BP_obj,BP_Table,'^epidermal growth factor receptor signaling pathway$'),caption='Top 5\\% ranking targets associated with "epidermal growth factor receptor signaling pathway"',label='egfrGO'),table.placement="H",include.rownames=FALSE)
+ print(xtable(printTargets(BP_obj,BP_Table,'^toll-like receptor TLR6:TLR2'),caption='Top 5\\% ranking targets associated with toll-like pathways',label='tollGO'),table.placement="H",include.rownames=FALSE)
+
+## print(xtable(printTargets(BP_obj,BP_Table,'^$'),caption='Top 5\\% ranking targets associated with ""',label='GO'),table.placement="H",include.rownames=FALSE)
+
+@
+
+<<CC_GO, echo=F, results='asis',eval=F>>=
+print(xtable(printTargets(CC_obj,CC_Table,'^dendrite$'),caption='Top 5\\% ranking targets associated with "Dendrite"',label='dendriteGO'),table.placement="H",include.rownames=FALSE)
+print(xtable(printTargets(CC_obj,CC_Table,'^axon$'),caption='Top 5\\% ranking targets associated with "Axon"',label='axonGO'),table.placement="H",include.rownames=FALSE)
+print(xtable(printTargets(CC_obj,CC_Table,'^nuclear body$'),caption='Top 5\\% ranking targets associated with "Nuclear Body"',label='nbGO'),table.placement="H",include.rownames=FALSE)
+
+@
+
+
+\section{Conclusion}
+
+The goal of that analysis was to evaluate the hypothesis that NScore cliques may be driven or associated by mode of action (MoA). In total, 7 cliques out of 82 had compounds with similar highly ranked targets. This may indicate that chemicals have the same mode of action in the cliques, and that the clique in fact correlates with the mode of action of its chemicals. Gene Ontology processes were then investigated inside each clique, and some cliques had targets which could be associated with either specific biological processes (cliques 20, 22 and 45) or at least belong to the same target family (cliques 72 and 45). 
+Overall, it may be assumed that some cliques correlate with the mode of action of their chemicals, even though some targets predicted in these cliques may not all belong to a specific pathway or pertain to specific protein families (e.g cliques 18 and 37).
+
+
+\end{document}
+
+

@@ -1,0 +1,207 @@
+
+%% Author: Azedine Zoufir
+%% Supervisor : Dr Andreas Bender
+%% All rights reserved
+%% 10/2/2015
+
+
+
+\documentclass{article}
+\usepackage[sc]{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{2}
+\usepackage{url}
+\usepackage{float}
+\usepackage[unicode=true,pdfusetitle,
+bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=2,
+breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=false]
+{hyperref}
+\hypersetup{
+pdfstartview={XYZ null null 1}}
+
+\begin{document}
+
+<<setup, include=FALSE, cache=FALSE>>=
+
+## Document related libraries
+
+library(knitr)
+library(xtable)
+
+## Library used in analysis
+
+library(plyr)
+library(reshape2)
+## library(RColorBrewer)
+## library(gridExtra)
+library(gplots)
+library(ggplot2)
+library(GGally)
+library(org.Hs.eg.db)
+library(KEGG.db)
+library(topGO)
+library(stringr)
+## library(WriteXLS)
+
+
+FIG_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/targetPred_fullBioMap/figures/'
+
+# set global chunk options
+opts_chunk$set(fig.path=FIG_DIR, fig.align='center', fig.show='hold')
+options(formatR.arrow=TRUE,width=90)
+
+# set working directory
+#setwd('C:/Users//Azedine/Dropbox/ucc_az/bioseek_Xitong_Ellen/') # Windows path
+#setwd('/home/az338/bioseek_Xitong_Ellen/NScore_cliques/') #Calculon path
+setwd('/home/az338/Dropbox/ucc_az/bioseek_Xitong_Ellen/targetPred_fullBioMap/') # Rover path
+
+@
+
+{\huge Target prediction applied to the NScore clusters}\\
+
+In this analysis, targets were predicted for the full set of chemicals tested in the BIOMAP system. Chemicals are attributed to one of the four clusters identified in the previous analysis, according to their predicted targets.
+
+\section{Methods}
+
+\subsection{Target Predictions}
+Targets were predicted using \textbf{PIDGIN} (developed by Lewis Mervin
+(lhm30@cam.ac.uk)). This software predicts the likelihood of activity
+of input structures by combining a Naive Bayes algorithm with
+structure-activity features extracted from known actives/inactives of
+1080 human
+targets, in publicly available chemical databases (PubChem,CHEMBL), which constitues the training set of the Naive Bayes algorithm.
+For each compound tested in the BIOMAP system, the prediction tool gives the probability of being active against a target. These probabilities are further processed by applying a target-specific threshold based on the maximization of accuracy of the prediction on the training set. If the probability is above the cutoff for this target, then the probability is replaced by 1, and the chemical is considered being active on that target. Otherwise the probability was replaced by 0.
+
+\subsection{Cluster inference}
+The compounds were then sorted into one of the four clusters identified in the previous analysis based on their predicted targets i.e either cluster 22,44,45 or 72. Chemicals having \underline{at least} the same predicted targets than chemicals of a specific cluster were assumed to belong to this cluster as well. Two chemicals that targetted a large amount of proteins (>100) were considered promiscuous and removed (TV000149 and TV000150).
+
+
+\section{Results}
+
+
+
+<<inMOAClus_Function, echo=F>>=
+
+# take as input target prediction df
+# returns if chemical is in one of the
+# 4 MOA clusters identified in the
+# previous analysis
+
+is_in_MOAclus = function(targetPred_df,clusUniprot) {
+    return(llply(3:ncol(targetPred_df), function(i) { # for all chemicals (the first two columns are target and uniprot ids, so we skipped the first two columns)
+        predTargets = targetPred_df[which(targetPred_df[,i] == 1),2]
+        return(unlist(llply(clusUniprot, function(moaClus_targets) {
+            mtc = match(predTargets, moaClus_targets)
+            n_moaClus_targets = length(moaClus_targets)
+            n_cmnTargets = length(which(!is.na(mtc)))
+            return(ifelse(n_cmnTargets == n_moaClus_targets,1,0))
+        })))
+    }))
+}
+
+@
+
+<<inferClus_Function, echo = F>>=
+infer_Cluster = function(chems,chems_NSclus,targetPred,clusUniprot) {
+    # find if a chemical is likely to be in a cluster with
+    # defined MoA
+    in_MOAclus = is_in_MOAclus(targetPred,clusUniprot)
+    in_MOAclus = do.call('rbind',in_MOAclus)
+    rownames(in_MOAclus) = chems$SPID
+      
+    # index of chemicals which pertains to
+    # at least one cluster
+    idx = which(rowSums(in_MOAclus) > 0)
+    in_MOAclus = in_MOAclus[idx,]
+    
+    # remove chemicals already known to be in
+    # a MOA cluster (identified in previous analysis)
+    idx = match(rownames(in_MOAclus),chems_NSclus$SPID)
+    proposed_cluster_df = in_MOAclus[which(is.na(idx)),]
+    colnames(proposed_cluster_df) = c('22','44','45','72')
+
+
+    # Reformatting/melting array
+    proposedClus = subset(melt(proposed_cluster_df),value == 1)
+    proposedClus = proposedClus[,-3]
+
+    # rename columns and add chemical name
+    colnames(proposedClus) = c('SPID','Proposed Cluster')
+    idx=match(proposedClus$SPID,chems$SPID)
+    proposedClus$Name = chems[idx,'AGENT_NAME']
+    proposedClus = proposedClus[,c(1,3,2)]
+
+    return(proposedClus)
+}
+
+@
+
+<<ClusterAnalysis_a, echo=F>>=
+# load chem dataset
+chems=read.table('/home/az338/Dropbox/ucc_az/bioseek_Xitong_Ellen/targetPred_fullBioMap/smiles_fullBIOMAP.tab',h=T,sep='\t',comment.char='',quote='',stringsAsFactors=F)
+chems_NSclus = read.table('/home/az338/Dropbox/ucc_az/bioseek_Xitong_Ellen//NScore_cliques/smiles_NScore_standardized_corrected.tab',h=T,sep='\t',comment.char='',quote='"',stringsAsFactors=F)
+
+# load Uniprot of targets for selected MoA clusters
+# (see previous analysis, name:clusUniprot_a , type:list)
+load('/home/az338/Dropbox/ucc_az/bioseek_Xitong_Ellen/targetPred_fullBioMap/clusterMOA_uniprot.Rdata')
+
+# load target predictions (accuracy prob cutoffs)
+NScore_pred_a = read.table('/home/az338/Dropbox/ucc_az/bioseek_Xitong_Ellen/targetPred_fullBioMap/targetPred_a_fullBIOMAP.txt',h=F,sep='\t',comment.char='',quote='')
+
+# proposed cluster
+proposedClus_a = infer_Cluster(chems,chems_NSclus,NScore_pred_a,clusUniprot_a)
+
+@
+
+<<ClusterAnalysis_f, echo=F, eval=F>>=
+
+# load target predictions (f-measure prob cutoffs)
+NScore_pred_f = read.table('/home/az338/Dropbox/ucc_az/bioseek_Xitong_Ellen/targetPred_fullBioMap/targetPred_f_fullBIOMAP.txt',h=F,sep='\t',comment.char='',quote='')
+
+# Note that the Uniprot of targets in defined MOA clusters (argument clusUniprot_a
+# below) are the same when using either accuracy or f-measure to define cutoffs
+proposedClus_f = infer_Cluster(chems,chems_NSclus,NScore_pred_f,clusUniprot_a)
+
+# N.b : again no diffferences when using the accuracy or the f-measure
+
+@
+
+<<Final Display, results='asis', echo=F>>=
+
+# remove  chemicals that appear to be promiscuous (more than 50 diffferent targets)
+proposedClus_a = subset(proposedClus_a, !(SPID %in% c('TV000149','TV000150')))
+
+# print proposed clusters from selected chemicals
+proposedClus_a[which(proposedClus_a$SPID == 'TX011636'),'Name'] = 'Fully acetylated glycerol monoester on 12-hydroxystearic acid...'
+print(xtable(proposedClus_a,caption='Proposed clusters for selected chemicals',label='propClusTB'),include.rownames=F,table.placement='H')
+
+@
+
+\subsection{Proposed chemical-cluster associations}
+
+Among all chemicals tested in the BioMAP system, only \Sexpr{nrow(proposedClus_a)} may belong to one of the four clusters with a defined MoA (see Table ~\ref{propClusTB}). Please refer to Tables ~\ref{PredTgTB_TX005784} to ~\ref{PredTgTB_TX012532} for predicted targets of each individual chemical. No chemical was potentially associated with cluster 45.
+
+\subsection{Predicted targets for selected chemicals}
+
+<<Display Pred Targets, results='asis', echo=F>>=
+
+# rename column of target prediction df to match chemical spid
+colnames(NScore_pred_a) = c('Target','Uniprot',chems$SPID)
+
+# print predicted targets for selected chemicals
+predTargets  = llply(as.character(proposedClus_a$SPID), function(spid) {
+     # get index of predicted targets
+     idx = which(NScore_pred_a[,spid] == 1)
+     # print corresponding target + uniprot
+     print(xtable(NScore_pred_a[idx,1:2],caption=paste('Predicted targets for chemical ',spid,sep=''),label=paste('PredTgTB_',spid,sep='')),include.rownames=F,table.placement='H')
+})
+
+@
+
+
+
+
+\end{document}

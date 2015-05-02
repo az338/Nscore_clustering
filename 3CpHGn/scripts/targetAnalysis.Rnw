@@ -1,0 +1,353 @@
+
+%% Author: Azedine Zoufir
+%% Supervisor : Dr Andreas Bender
+%% All rights reserved
+%% 28/11/14
+
+\documentclass{article}
+\usepackage[sc]{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{2}
+\usepackage{url}
+\usepackage{float}
+\usepackage[unicode=true,pdfusetitle,
+bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=2,
+breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=false]
+{hyperref}
+\hypersetup{
+pdfstartview={XYZ null null 1}}
+
+\begin{document}
+
+<<setup, include=FALSE, cache=FALSE>>=
+library(knitr)
+library(xtable)
+
+FIG_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/3CpHGn/figures/'
+
+# set global chunk options
+opts_chunk$set(fig.path=FIG_DIR, fig.align='center', fig.show='hold')
+options(formatR.arrow=TRUE,width=90)
+@
+
+{\huge 3CpHGn target prediction and pathway analysis}\\
+
+This analysis aims at predicting possible targets shared by the compounds in the the 3CpHGn file. Pathways and Gene Ontology (GO) Terms are then associated with the top 5\% targets.
+
+\section{Methods}
+
+\subsection{Target Prediction and Ranking}
+
+Targets were predicted using \textbf{PIDGIN} (developed by Lewis Mervis
+(lhm30@cam.ac.uk)). This software predicts the likelihood of activity
+of input structures by combining a Naive Bayes algorithm with
+strucutre-activity features extracted from known actives/inactives of
+1080 human
+targets, in publicly available chemical databases.
+For each compound in the 3CpHGn file, each of the 1080 targets received a rank
+based on the predicted activity. The average rank of a target
+measures how the target ranked over all compounds, i.e, the 'likelihood' of all
+compounds being active against this target. It allows to sort targets based on the overall
+predicted activity of the compounds in the 3CpHGn file. The top 5 \%
+targets with the smaller ranks were selected (54 targets).
+
+\subsection{Pathway Annotation}
+
+KEGG Pathway annotations were extracted for each of the selected
+targets using the Bioconductor package \textit{org.Hs.eg.db}. Pathways were
+selected if associated with more than 5 targets ranking in the top 5\%.
+
+\subsection{Gene Set Enrichment Analysis}
+
+Target ranks were used as score in a gene set enrichment analysis
+performed using the Bioconductor package \textit{TopGO}. The gene set
+enrichment analysis allowed to select GO Terms that were significantly associated
+with targets with smaller ranks. A target was considered significant
+if its rank was in the top 5\% ranks. A GO Term was considered
+significant based on the Kolmogorov-Smirnov (KS) test which compared the
+distribution of ranks for target pertaining in a GO-Term group with
+the ranks for targets not pertaining in the group. The 'elim'
+algorithm was used to select GO Terms as specific as possible. GO
+Terms were reported only if associated with at least 5 targets ranking in
+the top 5\% and with a p-value < 0.01. GO Terms describing broad functions/locations
+such as 'Signaling' or  'Cytoplasm' were removed by applying a cutoff
+on the number of annotated targets (i.e the total number of targets
+associated with the GO Term in the full list of 1080 targets). More
+specifically, GO Terms were eliminated if anotated with more than 1.5
+times the number of targets ranking at the top 5\% (81 targets).
+
+
+\section{Results}
+
+3CpGHn structures in the SMILES format, were first extracted from the
+ToxCast database along with basic details and compiled in Table ~\ref{chemTB}.
+
+<<Compounds, echo=F, results='asis'>>=
+load('~/bioseek_Xitong_Ellen/chemicals.Rdata')
+print(xtable(subset(compounds[-21,],select=-c(STRUCTURE_SMILES)),caption='3CpGHn chemicals. Note that one compound as been removed from the original file, because it could not be processed by the target prediction tool.',label='chemTB'),include.rownames=F,table.placement="H")
+@
+
+
+Table ~\ref{targetTB} shows the top 5\% predicted targets for the
+3CpHGn compounds. Identified targets were very diverse and belong to
+several protein classes. There may be, however, a link shared by the first
+five targets. The CB1 protein (Cannabinoid receptor 1), a
+G-protein coupled receptor, ranked
+first and may be the most probable common target for the compounds in
+the 3CpHGn compounds. It is  a neuromodulator, and regulates
+GABA and glutamate releases (Elphick, M. R., Egertova, M. ,2001) and
+is expressed in the Peripheral and in the central nervous system (CNS). The second
+protein TAAR1 (Trace amine-associated receptor 1) is also a
+neuromodulator for biogenic amines in the CNS. Two NF-$\kappa$B
+proteins, NFKB1 (p105 subunit) and RELA (p60 subunit) , were also
+found among the top 5 targets (rank 3 and 5 respectively).
+Finally, the hERG (KCNH2) ranked 4, although this protein is known to
+interact with many different drug classes. \\
+Due to the large number of proteins in Table \ref{targetTB}, pathways
+found for at least 5 of these targets were selected and are displayed
+ in Table \ref{keggTB}.
+
+<<importRes, echo=F, include=F>>=
+library(org.Hs.eg.db)
+library(KEGG.db)
+library(topGO)
+
+# set working directory
+#setwd('C:/Users//Azedine/Dropbox/ucc_az/bioseek_Xitong_Ellen/') # Windows path
+setwd('/home/az338/bioseek_Xitong_Ellen/3CpHGn/') #Calculon path
+
+# read target pred tool results
+res = read.table("3CpHGn_targetRanked.txt",h=F,sep="\t",comment.char="",quote="")
+# select top 5% ranked targets Uniprot ids
+n_target = floor(quantile(1:nrow(res),probs=.05)[[1]])
+tg_uniprots = head(as.character(res[order(res[,35]),c(1,2,35)][,2]),n_target)
+@
+
+<<displayTarget, results='asis', echo=F>>=
+# display these targets
+targetTab = head(res[order(res[,35]),c(1,35)],n_target)
+colnames(targetTab) = c("Target","Averaged Rank")
+print(xtable(targetTab,caption='Top 5\\% predicted targets (54 targets) by the PIDGIN software, and associated averaged rank over all compounds.',label='targetTB'), table.placement="H",include.rownames=FALSE)
+
+@
+
+<<PathwayAnalysis, results='asis', echo=F, warning=F>>=
+
+################
+# Kegg pathways
+################
+kegg_ids = select(org.Hs.eg.db,
+       keys = tg_uniprots,
+       keytype = "UNIPROT",
+       columns = "PATH")
+pathwayCounts = sort(colSums(table(kegg_ids)),decreasing=T)
+names(pathwayCounts) = unlist(lapply(names(pathwayCounts), function(id) KEGGPATHID2NAME[[id]]))
+path.df=as.data.frame(pathwayCounts[pathwayCounts >= 5])
+colnames(path.df) = c('Number of targets')
+path.df[,1] = as.integer(path.df[,1])
+print(xtable(path.df,caption='KEGG Pathways associated with at least 5 targets ranking in the top 5\\% (targets in table ~\\ref{targetTB}).',label='keggTB'), table.placement="H")
+@
+
+Among the 54 targets ranking in the top 5\%, 10 were associated with neuroactive
+ligand-receptor interaction activity, which reflects the activity of
+both the CB1, TAAR1 and many targets in Table \ref{targetTB}. 6
+targets were associated in particular with Neurotrophin
+signaling. This suggest that most of these targets were associated with
+neurological survival regulation or neuron formation. \\
+ Among other pathway identified,
+9 out of 54 targets were associated with cancer, and 8 were associated
+with the MAPK pathway, the latter being commonly associated with the
+former. More specifically, 6 targets were specifically linked to Prostate
+cancer. \\
+Chemokine signaling was also found for 5 targets, suggesting that
+some targets are involved in immune responses or in development. The
+latter may be more likely given that 6 targets were associated with
+Oocyte formation. \\
+Table \ref{keggTB} gives an overview of the target activities found
+among the top 5\% targets. In order to find out more specific target processes and functions, a gene set enrichment
+analysis based on the averaged target prediction ranks was performed.
+
+<<GSEA,echo=F,include=F, warning=F>>=
+
+#########################################################
+# Gene Set Enrichment Analysis based on all average ranks
+#########################################################
+
+# Get ranks
+ranks = res[,35]
+# Names of ranks are entrez ids
+names(ranks) = as.character(res[,2])
+
+# Remove uniprot ids not matching an
+# Entrez id in the org.hs.eg.db pkg
+sel = select(org.Hs.eg.db,
+       keys=as.character(res[,2]),
+       columns='ENTREZID',
+       keytype='UNIPROT')
+sel = sel[-which(is.na(sel[,2])),]
+
+
+# Replace Uniprot by Entrez ids
+# (note that several entrez ids may match
+# same uniprot id, in which case some entrez ids
+# will get the same ranks)
+ids = match(names(ranks),sel[,1])
+ids = subset(ids,!is.na(ids))
+ranks=ranks[sel[ids,1]]
+names(ranks) = sel[ids,2]
+
+# Rank Cutoff at which consider
+# a target is interesting
+cutoff = quantile(ranks,probs=.05)[[1]]
+
+# Biological Process
+BP_obj= new("topGOdata",
+    description = "BP based on ranks",
+    ontology = "BP",
+    allGenes = ranks,
+    geneSel = function(r) return(r < cutoff),
+    nodeSize = 5,
+    annot = annFUN.org,mapping="org.Hs.eg.db",ID='entrez')
+
+BP_test=runTest(BP_obj, algorithm = "elim", statistic = "ks",scoreOrder = "increasing")
+BP_Table=GenTable(BP_obj, KS=BP_test, topNodes=BP_test@geneData[['SigTerms']], numChar=150)
+#subset(BP_Table,KS<.05 & Significant >= 5 & Significant <=10)
+# IMPORTANT : note that the TOPNODES argument above is set to all Significant Terms on purpose, since we do not want to filter the GO Terms based on a ranking of p-values, but on a combination of cutoff on pvalue, number of significant targets and annotated targets (see methods)
+
+# Molecular Function
+MF_obj= new("topGOdata",
+    description = "MF based on ranks",
+    ontology = "MF",
+    allGenes = ranks,
+    geneSel = function(r) return(r < cutoff),
+    nodeSize = 5,
+    annot = annFUN.org,mapping="org.Hs.eg.db",ID='entrez')
+
+MF_test=runTest(MF_obj, algorithm = "elim", statistic = "ks", scoreOrder = "increasing")
+MF_Table=GenTable(MF_obj, KS=MF_test, topNodes =  MF_test@geneData[['SigTerms']], numChar=150)
+#subset(MF_Table,KS<.05 & Significant >= 5 & Significant <=10 )
+
+
+# Cellular Component
+CC_obj= new("topGOdata",
+    description = "CC based on ranks",
+    ontology = "CC",
+    allGenes = ranks,
+    geneSel = function(r) return(r < cutoff),
+    nodeSize = 5,
+    annot = annFUN.org,mapping="org.Hs.eg.db",ID='entrez')
+
+CC_test=runTest(CC_obj, algorithm = "elim", statistic = "ks", scoreOrder = "increasing")
+CC_Table=GenTable(CC_obj, KS=CC_test, topNodes =  CC_test@geneData[['SigTerms']], numChar=150)
+#subset(CC_Table,KS<.05 & Significant >= 5 & Significant <=10)
+@
+
+Many different Biological Processes were associated with the predicted
+targets (Table ~\ref{BP_TB}). 10 targets ranking in the top 5\%  were associated with the
+regulation of neurogenesis including the first ranking target (CNR1,
+Table ~\ref{neuroGO})
+and the fifth ranking target (RELA,
+Table ~\ref{neuroGO}). 8 targets ranking at the top 5\% were
+associated with the EGFR signaling pathway (Table ~\ref{egfrGO}). A large number of GO Terms (10) are
+associated with Toll-like signaling pathways involved in immune
+responses, but all these terms are in fact associated with the same
+targets, including the third ranking target (NF$\kappa$B) and RELA
+(Table ~\ref{tollGO}). Other terms such as cellular process involved in reproduction, mitosis, positive regulation of mitotic
+cell-cycle, G2/M transition of mitotic cell cycle or cell division,
+reflects the regulation of mitosis. \\
+The table of Molecular Functions (Table ~\ref{MF_TB}) may not give a
+useful picture since the targets in the 3CpGHn were enriched in 'drug
+binding' only.\\
+Cellular Components revealed that the top-ranking targets are likely
+to be located
+in neurons since some of the top-ranking targets were significanlty enriched
+in terms 'dendrite' and 'axon' (Table
+~\ref{CC_TB}). More specificaly, CHRM1, APP, AR and ACHE are both
+located in Dendrites and Axon and are ranking among the top 5\%
+targets (Tables ~\ref{dendriteGO} and ~\ref{axonGO}). Interestingly, 5 of the top-ranking targets were also
+associated with Nuclear Bodies (Tables
+~\ref{CC_TB} and ~\ref{nbGO}).
+
+
+
+<<GSEATabs,echo=F,results='asis'>>=
+
+# Reorder tables according to the number of targets ranking top 5%
+
+BP_Table = BP_Table[order(BP_Table$Significant,decreasing=T),]
+MF_Table = MF_Table[order(MF_Table$Significant,decreasing=T),]
+CC_Table = CC_Table[order(CC_Table$Significant,decreasing=T),]
+
+# Print tables + legend + filter out GO Terms as in methods (above)
+
+print(xtable(subset(BP_Table,KS<=.01 & Significant >= 5 & Annotated <= 1.5*n_target,select=-c(GO.ID,Expected)),caption='Significant Biological Processes terms. "Annotated" refers to the total number of targets annotated with the term (out of 1080 targets). Significant refers to the number of targets ranking in the top 5\\% (targets in table ~\\ref{targetTB}). "KS" is the p.value associated with the Kolmogorov-Smirnov test. The terms were ordered by number of targets ranking in the top 5\\%. ',label='BP_TB'), table.placement="H",include.rownames=FALSE)
+
+print(xtable(subset(MF_Table,KS<=.01 & Significant >= 5 & Annotated <= 1.5*n_target,select=-c(GO.ID,Expected)),caption='Significant Molecular Function terms. "Annotated" refers to the total number of targets annotated with the term (out of 1080 targets). Significant refers to the number of targets ranking in the top 5\\% (targets in table ~\\ref{targetTB}). "KS" is the p.value associated with the Kolmogorov-Smirnov test. The terms were ordered by number of targets ranking in the top 5\\%.',label='MF_TB'), table.placement="H",include.rownames=FALSE)
+
+
+print(xtable(subset(CC_Table,KS<=.01 & Significant >= 5 & Annotated <= 1.5*n_target,select=-c(GO.ID,Expected)),caption='Significant Cellular Component terms.  "Annotated" refers to the total number of targets annotated with the term (out of 1080 targets). Significant refers to the number of targets ranking in the top 5\\% (targets in table ~\\ref{targetTB}). "KS" is the p.value associated with the Kolmogorov-Smirnov test. The terms were ordered by number of targets ranking in the top 5\\%.',label='CC_TB'), table.placement="H",include.rownames=FALSE)
+@
+
+<<PrintTargets,echo=F>>=
+printTargets = function(obj,table,term) {
+    # get go id matching GO term
+    goid = table[grep(term,table$Term),'GO.ID']
+    # Get genes matching GO term
+    ids = ls(obj@graph@nodeData@data[[goid]]$genes)
+    # Get target uniprots, symbol and names
+    tgs = select(org.Hs.eg.db,
+        keys = ids,
+        columns=c("SYMBOL","GENENAME","UNIPROT"),
+        keytype="ENTREZID")
+    # Get index in top 5% ranking results
+    idx = match(tgs$UNIPROT,res[order(res[,35]),][1:n_target,2])
+    # Get rank
+    rank = idx[which(!is.na(idx))]
+    # Get indices in the tgs table
+    idx = which(!is.na(idx))
+    # Return table to print
+    return(data.frame(tgs[idx,],RANK=rank))
+}
+@
+
+
+
+<<BP_Targets, echo=F, results='asis'>>=
+print(xtable(printTargets(BP_obj,BP_Table,'^regulation of neurogenesis$'),caption='Top 5\\% ranking targets associated with "Regulation of neurogenesis"',label='neuroGO'),table.placement="H",include.rownames=FALSE)
+print(xtable(printTargets(BP_obj,BP_Table,'^epidermal growth factor receptor signaling pathway$'),caption='Top 5\\% ranking targets associated with "epidermal growth factor receptor signaling pathway"',label='egfrGO'),table.placement="H",include.rownames=FALSE)
+ print(xtable(printTargets(BP_obj,BP_Table,'^toll-like receptor TLR6:TLR2'),caption='Top 5\\% ranking targets associated with toll-like pathways',label='tollGO'),table.placement="H",include.rownames=FALSE)
+
+## print(xtable(printTargets(BP_obj,BP_Table,'^$'),caption='Top 5\\% ranking targets associated with ""',label='GO'),table.placement="H",include.rownames=FALSE)
+
+@
+
+<<CC_GO, echo=F, results='asis'>>=
+print(xtable(printTargets(CC_obj,CC_Table,'^dendrite$'),caption='Top 5\\% ranking targets associated with "Dendrite"',label='dendriteGO'),table.placement="H",include.rownames=FALSE)
+print(xtable(printTargets(CC_obj,CC_Table,'^axon$'),caption='Top 5\\% ranking targets associated with "Axon"',label='axonGO'),table.placement="H",include.rownames=FALSE)
+print(xtable(printTargets(CC_obj,CC_Table,'^nuclear body$'),caption='Top 5\\% ranking targets associated with "Nuclear Body"',label='nbGO'),table.placement="H",include.rownames=FALSE)
+
+@
+
+
+\section{Conclusion}
+
+Given the very different nature of the predicted targets, it is
+difficult to attribute a specific mode of action or properties to the
+3CpGHn chemicals. It seems that at a reasonable number of
+potential targets for these chemicals (i.e targets with high overall ranks attributed by the prediction
+tool), may be associated with regulation of neurogenesis and/or active
+in axon or dendrites. Since chemicals in the 3CpGHn file may be active on targets associated
+with the regulation of neuronal activity (such as CNR1, which is the
+first ranking target), it may be assumed that these
+chemicals have strctural properties found in psychoactive or
+neuroactive drugs. However, other pathways also contained potential
+targets for these chemicals, such as the targets involved in toll-like signaling
+pathways or EGFR signaling pathway.
+
+
+\end{document}
+
+

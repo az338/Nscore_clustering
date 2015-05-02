@@ -1,0 +1,44 @@
+
+%% Author: Azedine Zoufir
+%% Supervisor : Dr Andreas Bender
+%% All rights reserved
+%% 28/11/14
+
+\documentclass{article}
+\usepackage[sc]{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{2}
+\usepackage{url}
+\usepackage[unicode=true,pdfusetitle,
+bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=2,
+breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=false]
+{hyperref}
+\hypersetup{
+pdfstartview={XYZ null null 1}}
+
+\usepackage{Sweave}
+\begin{document}
+\input{targetAnalysis-concordance}
+\begin{Schunk}
+\begin{Sinput}
+> library(knitr)
+> library(xtable)
+> # set global chunk options
+> opts_chunk$set(fig.path='/home/az338/Dropbox/bioseek_Xitong_Ellen/', fig.align='center', fig.show='hold')
+> options(formatR.arrow=TRUE,width=90)
+\end{Sinput}
+\end{Schunk}
+
+{\huge 3CpHGn target prediction and pathway analysis}\\
+
+This analysis aims at predicting possible targets shared by the compounds in the the 3CpHGn file. Pathways and Gene Ontology (GO) Terms are then associated with the top 50 targets. 
+
+\begin{Schunk}
+\begin{Soutput}
+groupGOTerms: 	GOBPTerm, GOMFTerm, GOCCTerm environments built.
+\end{Soutput}
+\end{Schunk}
+
