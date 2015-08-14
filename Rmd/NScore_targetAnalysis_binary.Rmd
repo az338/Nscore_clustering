@@ -1,0 +1,228 @@
+---
+output:
+  word_document: default
+  html_document:
+    highlight: tango
+    keep_md: yes
+    theme: united
+    toc: no
+---
+
+```{r setup, include=FALSE, cache=FALSE}
+library(knitr)
+library(pander)
+
+library(plyr)
+library(reshape2)
+## library(RColorBrewer)
+## library(gridExtra)
+library(gplots)
+library(ggplot2)
+library(GGally)
+library(org.Hs.eg.db)
+#library(KEGG.db)
+library(stringr)
+
+FIG_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/NScore_cliques/figures/'
+
+# set global chunk options
+opts_chunk$set(fig.path=FIG_DIR, fig.align='center', fig.show='hold')
+options(formatR.arrow=TRUE,width=90)
+
+# set working directory
+#setwd('C:/Users//Azedine/Dropbox/ucc_az/bioseek_Xitong_Ellen/') # Windows path
+#setwd('/home/az338/bioseek_Xitong_Ellen/NScore_cliques/') #Calculon path
+DATA_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/NScore_cliques//data/'
+
+# load script for pathway annotations of targets
+source('/scratch/az338/ucc-fileserver/ucc_az/global_tools/uniprot_to_pathway.R')
+```
+
+{\huge Target prediction applied to the NScore clusters - using probability cutoff}\\
+
+This analysis aimed at investigating the correlation of the  mode-of-action of the BioMap compounds with the NScore clusters. 
+
+## Methods
+
+Targets were predicted using \textbf{PIDGIN} (developed by Lewis Mervin
+(lhm30@cam.ac.uk)). This software predicts the likelihood of activity
+of input structures by combining a Naive Bayes algorithm with
+structure-activity features extracted from known actives/inactives of
+1080 human
+targets, in publicly available chemical databases, which constititues the training set of the Naive Bayes algorithm.
+For each chemical in the test set (the BioMap compounds provided with a NScore cluster), the prediction tool gives the probability of being active against a target. These probabilities are further processed by applying a target-specific threshold based on the maximization of accuracy of the prediction on the training set. If the probability is above the cutoff for this target, then the probability is replaced by 1, and the chemical is considered being active on that target. Otherwise the probability was replaced by 0. Eventually, in each cluster, a target was selected if all the chemicals in the cluster were active against it. If at least one such target is identified, then it may be assumed that the clustering correlates with the mode-of-action of the chemicals. For these clusters, pathways were fetched from the KEGG database. 
+
+
+## Results
+
+### Target Prediction based on accuracy
+
+Using probability cutoff, 4 clusters showed a correlaiton with the mode-of-action i.e at least one target was common to all the members in the clusters. Among these 4 clusters, 3 were already identified in the previous analysis using ranks instead of probability cutoff: these are clusters 22 (table \ref{targetTB22}), 45 (table  \ref{targetTB45}) and 72 (table  \ref{targetTB72}). Cluster 44  was not identified previously and chemicals of cluster 44 only have one target in common (table \ref{targetTB44}). \\
+
+```{r Display_TargetsFunc, echo=F}
+
+# helper function which displays targets of clusters
+# in which chemicals have the same targets for a 
+# given target prediction computation 
+
+display_clusTargets = function(NScore_pred) {
+    # generate proper data sturctures for ggplot
+    colnames(NScore_pred) = c('TARGET','UNIPROT',as.character(chems$SPID))
+    
+# in each cluster, get average number of targets that were predicted
+# for all members of the clusters
+    commonTargets = dlply(chems, .(CLUSTER_ID), function(df) {
+        if(nrow(df) > 1) {
+            # compute number of actives in the cluster for each target 
+            sumActives = rowSums(NScore_pred[,c(df$SPID)])
+            # get targets with all cluster members being active against 
+            return(which(sumActives == nrow(df)))
+        }
+        else
+            return(integer(0))
+    })
+    #Get clusters for which chemicals all have the same targets
+    MOA.clusters = which(unlist(llply(commonTargets,length)) > 0)
+
+   # Print the targets for these clusters into tables
+   l_ply(1:length(MOA.clusters), function(i) {
+       pandoc.table(NScore_pred[commonTargets[MOA.clusters][[i]],1:2],caption=paste0('Common predicted targets for chemicals in cluster ',MOA.clusters[[i]],sep=''),include.rownames=F)
+   })
+
+   # Save the Uniprot for these targets by cluster for the GSEA
+    clus.Uniprot=llply(1:length(MOA.clusters), function(i) {
+        return(NScore_pred[commonTargets[MOA.clusters][[i]],2])
+    })
+    names(clus.Uniprot) = MOA.clusters
+    return(clus.Uniprot)
+}
+
+```
+
+
+```{r ClusterAnalysis_Accuracy, echo=F, results='asis'}
+
+# load chem dataset
+chems=read.table(file.path(DATA_DIR,'smiles_NScore_standardized.tab'),h=T,sep='\t',comment.char='',quote='"',stringsAsFactors=F)
+
+# load target predictions with 
+# probability cutoffs based on accuracy
+load(file.path(DATA_DIR,'NSPred_binary_heat_a.Rdata'))
+NSPred_a = NScore_pred[,]
+
+# for each cluster, display targets shared
+# by all members/chemicals of the cluster
+# and store their uniprot id
+clusUniprot_a = display_clusTargets(NSPred_a)
+
+# save target prediction for clusters with defined MoA
+# (the same targets were found fot both cutoff types 
+# accuracy or f-measure; arbitrarily, results with accuracy
+# were saved)
+#save(clusUniprot_a,file='/home/az338/ucc_az/bioseek_Xitong_Ellen/targetPred_fullBioMap/clusterMOA_uniprot.Rdata')
+
+
+```
+
+
+```{r ClusterAnalysis_Fmeas, echo=F, results='asis', eval=F}
+
+# load target predictions with
+# probability cutoffs based on F-measure
+load(file.path(DATA_DIR,'NSPred_binary_heat_f.Rdata'))
+NSPred_f = NScore_pred[,]
+
+# for each cluster, display targets shared
+# by all members/chemicals of the cluster
+# and store their uniprot id
+clusUniprot_f = display_clusTargets(NSPred_f)
+
+```
+
+
+
+### Pathways for target predictions based on accuracy
+
+
+One of the shared targets of chemicals in cluster 22 seemed to be involved in nuclear receptor transcription but no other pathways were found for other targets associated with that cluster (Table \ref{keggTB22}). The unique target associated with cluster 44 is involved in G alpha (i) signalling events, and lysosphingolipid activities  (Table \ref{keggTB44}). In cluster 45, all 6 targets may belong to the retinoic acid receptor family which seemed to be associated with nuclear receptor transcription as in the cluster 22(Table \ref{keggTB45} and Figure \ref{fig:barplot45}). One target is also involved in the regulation of lipid metabolism by PPARalpha and the transcriptional regulation of white adipocyte differentiation (Table \ref{keggTB45} and Figure \ref{fig:barplot45}). Finally, shared targets of chemicals in cluster 72 may be associated with steroid hormone metabolism, activation of aryl-sulfatase and glycosphingolipid metabolism (Table \ref{keggTB72} and Figure \ref{fig:barplot72}). Identical results were obtained when the probability cutoffs were based on maximisation of the F-measure (the harmonic mean between precision and recall), which further confirms that these clusters correlate with the mode of action of their chemicals.
+
+```{r pathways, echo=F, warning=F}
+
+## generate proper data sturctures for ggplot
+colnames(NSPred_a) = c('TARGET','UNIPROT',as.character(chems$SPID))
+
+# target pred dataset
+targetPred = melt(NSPred_a[,-ncol(NSPred_a)],id=c('TARGET','UNIPROT'))
+colnames(targetPred) = c('TARGET','UNIPROT','COMPOUND','SCORE')
+targetPred$CLUSTER = chems[match(targetPred$COMPOUND,chems$SPID),'CLUSTER_ID']
+MOA.clusters = names(clusUniprot_a)
+
+# annotate common targets with reactome/kegg pathways
+pathways = ddply(subset(targetPred, CLUSTER %in% MOA.clusters), .(CLUSTER), function(df) {
+        #cat(unique(df$CLUSTER),'\n')
+        targets = unlist(clusUniprot_a[as.character(unique(df$CLUSTER))])
+        return(ldply(targets, function(p) {
+                #cat(p,'\n')
+                reac = unlist(target_to_reactome(p))
+                kegg = target_to_KEGG(p)
+                #print(kegg)
+                return(data.frame(TARGET=p,PATHWAY=c(reac, kegg)))
+        }))
+})
+pathways = subset(pathways,PATHWAY != '---',select=-c(.id))
+
+```
+
+
+```{r path22, echo=F,results='asis'}
+df22 = subset(pathways,CLUSTER == 22)
+tb22 = table(df22$PATHWAY) 
+pandoc.table(as.data.frame(tb22[tb22 > 0]),caption='Pathways for cluster 22')
+```
+
+
+```{r path44, echo=F,results='asis'}
+df44 = subset(pathways,CLUSTER == 44)
+tb44=table(df44$PATHWAY)
+pandoc.table(as.data.frame(tb44[tb44 > 0]),caption='Pathways for cluster 44')
+```
+
+```{r path45, echo=F,results='asis'}
+df45 = subset(pathways,CLUSTER == 45)
+df45$PATHWAY = factor(df45$PATHWAY,levels = names(sort(table(df45$PATHWAY),decreasing = T)))
+tb45=table(df45$PATHWAY)
+pandoc.table(as.data.frame(sort(tb45[tb45 > 0]),decreasing = T),caption='Pathways for cluster 45')
+
+```
+
+```{r path72, echo=F,results='asis'}
+df72 = subset(pathways,CLUSTER == 72)
+df72$PATHWAY = factor(df72$PATHWAY,levels = names(sort(table(df72$PATHWAY),decreasing = T)))
+tb72=table(df72$PATHWAY)
+pandoc.table(as.data.frame(sort(tb72[tb72 > 0]),decreasing = T),caption='Pathways for cluster 72')
+```
+
+
+```{r barplot45, fig.cap='Counts for pathways associated with shared targets in cluster 45', echo=F}
+    ggplot(df45,aes(PATHWAY)) + 
+    geom_bar() + 
+    theme_bw() +
+    theme(axis.text.x=element_text(angle=45,hjust = 1,vjust = 1)) +
+    xlab('Pathway')
+```
+
+
+```{r barplot72, fig.cap='Counts for pathways associated with shared targets in cluster 72', echo =F}
+    ggplot(df72,aes(PATHWAY)) + 
+    geom_bar() + 
+    theme_bw() +
+    theme(axis.text.x=element_text(angle=45,hjust = 1,vjust = 1)) +
+    xlab('Pathway')
+```
+
+## Conclusion
+
+Clusters 22, 45 and 72 may show the strongest correlation to the mode of action of their chemicals. Indeed, they were identified in both the predicted ranks and the probabily cutoff analyses. Cluster 44 may also be reconsidered, as the chemicals in this cluster shared one target. However, clusters 18, 20, 25 and 37 which were shown to have a correlation with the mode of action of their chemicals using the predicted ranks, did not show a clear correlation using the probability cutoffs. 
+
+
+
