@@ -1,26 +1,22 @@
 
 library(plyr)
 
-# Read standardized smiles and corresponding
-# cluster/clique number 
-Chems = read.table('~/Dropbox/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/smiles_NScore_standardized_corrected.tab',sep='\t',h=T)
-
 
 ############################################################
 ## Run target prediction tool (incl. negatives)
 ############################################################
 # write smiles in a file
-writeLines(as.character(Chems$Structure),file.path('~/Dropbox/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/SMILES_TMP.csv'))
+
 # set working dir to PIDGIN dir
-setwd('~/Dropbox/ucc_az/PIDGIN')
+setwd('~/ucc-fileserver/ucc_az/PIDGIN')
 # run PIDGIN for different threshold method
 method = list('a','f','p','r')
-system('rm ~/Dropbox/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/error_struct.txt')
+system('rm ~/ucc-fileserver/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/data/error_struct.txt')
 l_ply(method, function(p) {
-    system(paste('python predict_binary_heat.py ', p,' ~/Dropbox/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/SMILES_TMP.csv 2>> ~/Dropbox/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/error_struct.txt',sep=''))
+    system(paste('python predict_binary_heat.py ', p,' ~/ucc-fileserver/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/data/smiles_NScore_ST_corrected.smi 2>> ~/ucc-fileserver/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/data/error_struct.txt',sep=''))
 # read and save rank matrix
     NScore_pred = read.table('out_results_binary_heat.txt',h=F,sep="\t",comment.char="",quote="",stringsAsFactors=F)
-    save(NScore_pred, file = paste('~/Dropbox/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/NSPred_binary_heat_',p,'.Rdata',sep=''))
+    save(NScore_pred, file = paste('~/ucc-fileserver/ucc_az/bioseek_Xitong_Ellen/NScore_cliques/data/NSPred_binary_heat_',p,'.Rdata',sep=''))
 #remove output file
     system('rm out_results_binary_heat.txt')
 })

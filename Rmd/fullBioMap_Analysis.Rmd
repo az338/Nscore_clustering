@@ -28,6 +28,7 @@ library(org.Hs.eg.db)
 library(KEGG.db)
 library(topGO)
 library(stringr)
+library(Rcpi)
 ## library(WriteXLS)
 
 
@@ -35,7 +36,7 @@ FIG_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/targetPred_f
 
 # set global chunk options
 opts_chunk$set(fig.path=FIG_DIR, fig.align='center', fig.show='hold')
-options(formatR.arrow=TRUE,width=90)
+options(formatR.arrow=TRUE,width=90,stringsAsFactors = F)
 
 # set working directory
 #setwd('C:/Users//Azedine/Dropbox/ucc_az/bioseek_Xitong_Ellen/') # Windows path
@@ -184,7 +185,6 @@ predTargets  = llply(as.character(proposedClus_a$SPID), function(spid) {
 })
 
 ```
-
 
 
 

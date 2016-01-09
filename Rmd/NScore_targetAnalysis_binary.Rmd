@@ -14,20 +14,21 @@ library(pander)
 
 library(plyr)
 library(reshape2)
+library(Rcpi)
 ## library(RColorBrewer)
 ## library(gridExtra)
 library(gplots)
 library(ggplot2)
 library(GGally)
 library(org.Hs.eg.db)
-#library(KEGG.db)
+library(KEGG.db)
 library(stringr)
 
 FIG_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/NScore_cliques/figures/'
 
 # set global chunk options
-opts_chunk$set(fig.path=FIG_DIR, fig.align='center', fig.show='hold')
-options(formatR.arrow=TRUE,width=90)
+opts_chunk$set(fig.path=FIG_DIR, fig.width=12,fig.height=12, fig.show='hold')
+options(formatR.arrow=TRUE,width=90,stringsAsFactors = F)
 
 # set working directory
 #setwd('C:/Users//Azedine/Dropbox/ucc_az/bioseek_Xitong_Ellen/') # Windows path
@@ -103,7 +104,7 @@ display_clusTargets = function(NScore_pred) {
 ```{r ClusterAnalysis_Accuracy, echo=F, results='asis'}
 
 # load chem dataset
-chems=read.table(file.path(DATA_DIR,'smiles_NScore_standardized.tab'),h=T,sep='\t',comment.char='',quote='"',stringsAsFactors=F)
+chems=read.table(file.path(DATA_DIR,'smiles_NScore.tab'),h=T,sep='\t',comment.char='',quote='"',stringsAsFactors=F)
 
 # load target predictions with 
 # probability cutoffs based on accuracy
@@ -116,7 +117,7 @@ NSPred_a = NScore_pred[,]
 clusUniprot_a = display_clusTargets(NSPred_a)
 
 # save target prediction for clusters with defined MoA
-# (the same targets were found fot both cutoff types 
+# (the same targets were found for both cutoff types 
 # accuracy or f-measure; arbitrarily, results with accuracy
 # were saved)
 #save(clusUniprot_a,file='/home/az338/ucc_az/bioseek_Xitong_Ellen/targetPred_fullBioMap/clusterMOA_uniprot.Rdata')
@@ -139,6 +140,59 @@ clusUniprot_f = display_clusTargets(NSPred_f)
 
 ```
 
+### Chemical similarity
+
+```{r globalchemSimilarity}
+# generate ecfp4 fingerprints 
+mol = readMolFromSmi(file.path(DATA_DIR,'smiles_NScore_ST_corrected.smi'),type='mol')
+fps = extractDrugExtendedComplete(mol,depth=4)
+
+
+# compute tanimoto similarity
+sim = laply(1:nrow(fps), function(x) {
+  return(laply(1:nrow(fps), function(y) {
+    return(calcDrugFPSim(fps[x,],fps[y,],fptype='complete',metric='tanimoto'))    
+  }))
+})
+
+# distribution of tanimoto coeffs
+hist(sim)
+
+# summary of data range
+fivenum(sim)
+
+
+```
+
+```{r intraSimClust}
+rownames(sim) = colnames(sim) = chems$SPID
+medians = dlply(chems, .(CLUSTER_ID), function(df) {
+   mat = sim[df$SPID,df$SPID]
+   median(mat)
+})
+n_compounds = dlply(chems, .(CLUSTER_ID), function(df) {
+   mat = sim[df$SPID,df$SPID]
+   n = nrow(mat)
+   if(is.null(n)) n=1
+   return(n)
+})
+intra_med = data.frame(Cluster=names(medians),Med=unlist(medians),n=unlist(n_compounds))
+
+# intra cluster similarity and were the BioMap clusters fit
+ggplot(intra_med,aes(x=Med)) + 
+  geom_histogram(binwidth=0.2) +
+  xlim(0,1) +
+  geom_vline(aes(xintercept = unlist(medians['22'])),col='red') +
+  geom_vline(aes(xintercept = unlist(medians['44'])),col='darkolivegreen') +
+  geom_vline(aes(xintercept = unlist(medians['45'])),col='darkgoldenrod') +
+  geom_vline(aes(xintercept = unlist(medians['72'])),col='steelblue') +
+  xlab('Intra cluster median similarity') +
+  theme_bw()
+
+intra_med[order(intra_med$Med,decreasing = T),][1:10,]
+
+
+```
 
 
 ### Pathways for target predictions based on accuracy
@@ -170,6 +224,12 @@ pathways = ddply(subset(targetPred, CLUSTER %in% MOA.clusters), .(CLUSTER), func
         }))
 })
 pathways = subset(pathways,PATHWAY != '---',select=-c(.id))
+pathways$PATHWAY = as.character(pathways$PATHWAY)
+
+# Shorten the very long pathways
+pathways[grep('Reg.*?PPAR',pathways$PATHWAY),'PATHWAY'] = 'Regulation of lipid by PPARa'
+pathways[grep('PTM*',pathways$PATHWAY),'PATHWAY'] = 'Post-translational modifications'
+
 
 ```
 
@@ -203,12 +263,34 @@ pandoc.table(as.data.frame(sort(tb72[tb72 > 0]),decreasing = T),caption='Pathway
 ```
 
 
+
+```{r barplot22, fig.cap='Counts for pathways associated with shared targets in cluster 22', echo=F, }
+    ggplot(df22,aes(PATHWAY)) + 
+    geom_bar() + 
+    theme_bw() +
+    theme(axis.text.x=element_text(angle=45,hjust = 1,vjust = 1)) +
+    xlab('Pathway') +
+    ylim(0,5)
+```
+
+
+
+```{r barplot44, fig.cap='Counts for pathways associated with shared targets in cluster 44', echo=F}
+    ggplot(df44,aes(PATHWAY)) + 
+    geom_bar() + 
+    theme_bw() +
+    theme(axis.text.x=element_text(angle=45,hjust = 1,vjust = 1)) +
+    xlab('Pathway') +
+    ylim(0,5)
+```
+
 ```{r barplot45, fig.cap='Counts for pathways associated with shared targets in cluster 45', echo=F}
     ggplot(df45,aes(PATHWAY)) + 
     geom_bar() + 
     theme_bw() +
     theme(axis.text.x=element_text(angle=45,hjust = 1,vjust = 1)) +
-    xlab('Pathway')
+    xlab('Pathway') +
+    ylim(0,5)
 ```
 
 
@@ -217,7 +299,8 @@ pandoc.table(as.data.frame(sort(tb72[tb72 > 0]),decreasing = T),caption='Pathway
     geom_bar() + 
     theme_bw() +
     theme(axis.text.x=element_text(angle=45,hjust = 1,vjust = 1)) +
-    xlab('Pathway')
+    xlab('Pathway') +
+    ylim(0,5)
 ```
 
 ## Conclusion
