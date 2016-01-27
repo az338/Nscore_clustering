@@ -1,0 +1,539 @@
+---
+output:
+  word_document: default
+  html_document:
+    highlight: tango
+    keep_md: yes
+    theme: united
+    toc: no
+---
+
+```{r setup, include=FALSE, cache=FALSE}
+library(knitr)
+library(pander)
+
+library(plyr)
+library(reshape2)
+library(Rcpi)
+## library(RColorBrewer)
+## library(gridExtra)
+library(gplots)
+library(ggplot2)
+library(GGally)
+
+FIG_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/NScore_cliques/figures/'
+
+# set global chunk options
+opts_chunk$set(fig.path=FIG_DIR, fig.width=12,fig.height=12, fig.show='hold')
+options(formatR.arrow=TRUE,width=90,stringsAsFactors = F)
+
+# set working directory
+#setwd('C:/Users//Azedine/Dropbox/ucc_az/bioseek_Xitong_Ellen/') # Windows path
+#setwd('/home/az338/bioseek_Xitong_Ellen/NScore_cliques/') #Calculon path
+DATA_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/NScore_cliques//data/'
+
+# load chem dataset
+chems = read.table(file.path(DATA_DIR,'smiles_NScore.tab'),h=T,sep='\t',comment.char='',quote='"',stringsAsFactors=F)
+duplicated_spid = chems[which(duplicated(chems$smiles)),'SPID']
+duplicated_chemIdx = which(duplicated(chems$smiles))
+chems = chems[which(!duplicated(chems$smiles)),]
+
+# load BioMap dataset
+biomap = read.csv(file.path(DATA_DIR,'BSK_TOXCAST_NSCORE_export.csv'),header=T)
+biomap = subset(biomap,SPID %in% chems$SPID)  # filter to those that are in the biomap dataset
+
+# load signature envelopes + assay annotations
+sigenv = read.csv(file.path(DATA_DIR,'BSK_EPA_SigEnvelope.csv'),header=T)
+
+# load target predictions with 
+# probability cutoffs based on accuracy
+load(file.path(DATA_DIR,'NSPred_binary_heat_a.Rdata'))
+NSPred_a = NScore_pred[,]
+```
+
+
+# 1. Chemical similarity
+
+```{r globalchemSimilarity, echo=F, results='asis'}
+# generate ecfp4 fingerprints 
+mol = readMolFromSmi(file.path(DATA_DIR,'smiles_NScore_ST_corrected.smi'),type='mol')
+fps = extractDrugExtendedComplete(mol,depth=4)
+fps = fps[-duplicated_chemIdx,]
+
+# compute tanimoto similarity
+sim = laply(1:nrow(fps), function(x) {
+  return(laply(1:nrow(fps), function(y) {
+    return(calcDrugFPSim(fps[x,],fps[y,],fptype='complete',metric='tanimoto'))    
+  }))
+})
+
+# distribution of tanimoto coeffs
+hist(sim[upper.tri(sim)])
+
+# summary of data range
+sm = fivenum(sim[upper.tri(sim)])
+names(sm) = c('min','25%','median','75%','max')
+pandoc.table(sm)
+
+
+```
+
+
+```{r intraSimClust, echo=F, results = 'asis'}
+rownames(sim) = colnames(sim) = chems$SPID
+medians = dlply(chems, .(CLUSTER_ID), function(df) {
+   mat = sim[df$SPID,df$SPID]
+   mat = mat[upper.tri(mat)]
+   median(mat)
+})
+n_compounds = dlply(chems, .(CLUSTER_ID), function(df) {
+   mat = sim[df$SPID,df$SPID]
+   n = nrow(mat)
+   if(is.null(n)) n=1
+   return(n)
+})
+intra_med = data.frame(Cluster=names(medians),Median=unlist(medians),n=unlist(n_compounds))
+intra_med = intra_med[intra_med$n > 1,]
+
+# intra cluster similarity and were the BioMap clusters fit
+ggplot(intra_med,aes(x=Median)) + 
+  geom_histogram(binwidth=0.2) +
+  xlim(0,1) +
+  geom_vline(aes(xintercept = unlist(medians['22'])),col='red') +
+  geom_vline(aes(xintercept = unlist(medians['44'])),col='darkolivegreen') +
+  geom_vline(aes(xintercept = unlist(medians['45'])),col='darkgoldenrod') +
+  geom_vline(aes(xintercept = unlist(medians['72'])),col='steelblue') +
+  xlab('Intra cluster median similarity') +
+  theme_bw()
+
+intra_med = data.frame(Rank = 1:15, intra_med[order(intra_med$Median,decreasing = T),][1:15,])
+
+pandoc.table(intra_med,include.rownames=F)
+pandoc.table(subset(chems, CLUSTER_ID == 18),rownames=FALSE)
+
+# hierarchical clustering
+dist = dist(sim)
+hc = hclust(dist) 
+
+simdf = melt(sim)
+simdf$Var1 = factor(simdf$Var1, levels = rownames(sim)[hc$order])
+simdf$Var2 = factor(simdf$Var2, levels = rownames(sim)[hc$order])
+
+# heatmap
+
+ggplot(simdf,aes(x=Var1,y=Var2,fill=value)) +
+  geom_raster() +
+  scale_fill_gradient2(low = 'beige', high= 'red') +
+  theme(axis.text.x=element_blank(),axis.text.y=element_blank(),axis.ticks.x=element_blank(),axis.ticks.y=element_blank()) +
+  xlab('') + 
+  ylab('')
+
+
+# remove duplicated values
+l_ply(1:nrow(simdf), function(i) {
+  simdf[i,1:2] <<- sort(simdf[i,1:2])
+})
+simdf = simdf[which(simdf$Var1 != simdf$Var2),]
+simdf =simdf[!duplicated(simdf),]
+simdf = simdf[order(as.character(simdf$Var1),as.character(simdf$Var2)),]
+colnames(simdf) = c('SPID1','SPID2','SIM')
+
+
+```
+
+# 2. BioMap profiles
+
+```{r biomap, echo=F, results = 'asis'}
+
+#get nscore profiles for each compounds
+nscores = dlply(biomap,.(SPID),function(df) {
+  # for each compound get the concentration dependant NScore
+  conc_nscores = daply(df,.(CONC), function(df2) {
+    return(df2[order(df2$ACID),'NSCORE'])
+  })
+  nscore = apply(conc_nscores,2,median) 
+  names(nscore) = unique(as.character(df[order(df$ACID),'ACID']))
+  return(nscore)
+})
+
+
+
+# compute pairwise Fisher transformed spearman correlation matrix
+zmat = laply(nscores, function(x) {
+                return(llply(nscores, function(y) {
+                  S = cor(x,y,method = 'spearman') # spearman correlation
+                  #Fr = atanh(r) # Fisher transformation (inverse hyperbolic tangent) 
+                  #z = sqrt((length(x)-3)/1.06)*Fr # Z-Score
+                  z = sqrt( (length(x)-3)/1.06 ) * (1/2 * log((1+S)/(1-S) ) )
+                  return(z)
+          }))
+})
+
+# same but in a melted data frame format (needed for ggplot)
+zdf = ldply(1:length(nscores), function(i) {
+                return(ldply(1:length(nscores), function(j) {
+                  S = cor(nscores[[i]],nscores[[j]],method='spearman') # spearman correlation
+                  #Fr = atanh(r) # Fisher transformation (inverse hyperbolic tangent) 
+                  #z = sqrt((length(nscores[[i]])-3)/1.06)*Fr # Z-Score
+                  z = sqrt( (length(nscores[[i]])-3)/1.06 ) * (1/2 * log((1+S)/(1-S) ) )
+                  return(data.frame(SPID1=names(nscores)[i],SPID2=names(nscores)[j],Z=z))
+                }))
+})
+
+# distribution of Spearman Z-Scores
+hist(unlist(zmat[upper.tri(zmat)]))
+
+```
+
+```{r heatmap, echo=F, results = 'asis'}
+
+zdf2 = zdf[,]
+
+# for hierarchical clustering, replace very large values (Inf.) 
+#by maximum pairwise Z observed (this might still be too high)
+zmat[zmat > 100] = max(unlist(zmat[zmat < 100]))
+
+# hierarchical clustering
+dist = dist(zmat)
+hc = hclust(dist)
+
+# rearrange heatmaps labels via levels updating
+zdf2$SPID1 = factor(zdf$SPID1, levels = unique(rownames(zmat)[hc$order]))
+zdf2$SPID2 = factor(zdf$SPID2, levels = unique(rownames(zmat)[hc$order]))
+zdf2$Z[zdf2$Z > 5] = 5
+# heatmap of correlation matrix
+ggplot(zdf2, aes(x=SPID1,y=SPID2, fill = Z)) +
+  geom_raster() +
+  scale_fill_gradient2(low = 'blue', high= 'red', mid = 'beige') +
+  theme(axis.text.x=element_blank(),axis.text.y=element_blank(),
+        axis.ticks.x=element_blank(),axis.ticks.y=element_blank(),
+        panel.grid=element_blank(), panel.border=element_blank()) +
+  xlab('') + 
+  ylab('')
+
+```
+
+# 3. Correlation Tanimoto vs activity difference 
+```{r Cor, echo=F, results = 'asis'} 
+# actMat = daply(subset(biomap, ACID == 173), .(ACID), function(df) {
+#   med_act = dlply(df, .(SPID), function(df2) {
+#     return(median(df2$NSCORE)) # average over concentrations
+#   })
+#   return(laply(med_act, function(x) {
+#     llply(med_act, function(y) {
+#       return(abs(x - y))
+#     })
+#   }))
+# })
+
+pvals = read.csv(file.path(DATA_DIR,'median_act_diffs_HLM_and_pvals.csv'),h=T)
+
+nrow(subset(pvals,pLM < .001 | pHM < .001)) # 50 assays which have different biosimilarity in function of the chem similarity
+nrow(subset(pvals,pLM < .001 & pHM < .001)) # 10 assays have a strong relationship between biosimilarity and chem sim
+str_rel_assays = subset(pvals,pLM < .001 & pHM < .001)$ACID
+
+#compute activity differences and chem similarity for the above assays
+i = 0
+df = ddply(subset(biomap, ACID %in% str_rel_assays), .(ACID), function(df) { # loop over assays   
+    cat(i,'ACID:',unique(df$ACID),'\n') 
+    i <<- i + 1 
+    # compute median actity per compound in the assay 
+    # i.e average NSCORE over concentrations w/ medians 
+    med_act = dlply(df, .(SPID), function(df2) { return(median(df2$NSCORE)) }) 
+    #compute biosimilarity data frame 
+    actmelt = ldply(1:length(med_act), function(i) { 
+      return(ldply(1:length(med_act), function(j) { 
+        return(data.frame(SPID1=names(med_act)[i],
+                          SPID2 = names(med_act)[j], 
+                          DIFF =abs(med_act[[i]] - med_act[[j]]))) 
+        })) 
+      }) 
+    #print(head(actmelt)) 
+    #print(dim(actmelt))
+   
+    # sort data frame and remove duplicates 
+    l_ply(1:nrow(actmelt), function(i) {actmelt[i,1:2] <<- sort(actmelt[i,1:2]) }) 
+    actmelt = actmelt[which(actmelt$SPID1 != actmelt$SPID2),] 
+    actmelt = actmelt[!duplicated(actmelt),] 
+    actmelt = actmelt[order(as.character(actmelt$SPID1),as.character(actmelt$SPID2)),]
+#   
+#   # merge with similarity data frame 
+    df = merge(simdf,actmelt,by=c('SPID1','SPID2'))
+#   
+#   # discretise chemical similarity 
+    df$simGp = unlist(llply(df$SIM, function(sim) { 
+      if(sim < .25) return('LOW') 
+      else if(sim >= .2 & sim < .7)    return('MED') else return('HIGH') 
+    }))
+    return(df)
+})
+
+# plot most striking assays in terms of biosim vs chemsim
+df$Assay = sigenv[match(df$ACID,sigenv$ACID),'ASSAY_COMPONENT_NAME']
+df$simGp = factor(df$simGp, levels  = c('LOW','MED','HIGH'))
+ggplot(df, aes(x=simGp,y=100-DIFF, fill = simGp)) +
+  geom_boxplot() +
+  facet_wrap(~Assay) +
+  xlab('Chemical similarity') +
+  ylab('Biological similarity') +
+  scale_fill_manual(values=c(
+            'HIGH' = 'deepskyblue4',
+            'MED' = 'deepskyblue3',
+            'LOW' = 'deepskyblue'
+  )) +
+  theme_bw() +
+  theme(legend.position="none")
+
+
+# 
+# # proportion of compounds in each group
+# pval = ldply(0:25, function(t) { 
+#           props = ddply(df,.(simGp), function(df) {
+#             # compute prop of biosimilars vs not
+#             propBioSim = length(which(df$DIFF < t))/nrow(df)
+#             propNoSim =  length(which(df$DIFF >= t))/nrow(df)
+#             data.frame(propBioSim, propNoSim)
+#           })
+#           # contingency table to test the associaiton
+#           tb = props[,-1]
+#           rownames(tb) = props$simGp
+#           data.frame(t=t, pval=chisq.test(tb)$p.value)
+# })
+# t = 20
+# props = ddply(df,.(simGp), function(df) {
+# # compute prop of biosimilars vs not
+#       propBioSim = length(which(df$DIFF < t))/nrow(df)
+#       propNoSim =  length(which(df$DIFF >= t))/nrow(df)
+#       data.frame(propBioSim, propNoSim)
+# })
+# 
+# 
+# # bar plots
+# ggplot(melt(props),aes(x=variable,y=value)) +
+#   geom_bar(stat='identity') +
+#   facet_wrap(~simGp)
+# 
+
+```
+
+
+# 4. Correlation Tanimoto vs Z
+
+```{r Cor2, echo=F, results='asis'}
+
+# remove duplicated values
+l_ply(1:nrow(zdf), function(i) {
+  zdf[i,1:2] <<- sort(zdf[i,1:2])
+  #simdf[i,1:2] <<- sort(simdf[i,1:2])
+})
+
+# remove same compound pairs
+zdf = zdf[which(zdf$SPID1 != zdf$SPID2),]
+
+# remove duplicated pairs (since computed from matrix form)
+zdf = zdf[order(as.character(zdf$SPID1),as.character(zdf$SPID2)),]
+zdf = zdf[!duplicated(zdf),]
+
+# no correlation in general in scatterplot
+df = merge(simdf,zdf,by=c('SPID1','SPID2'))
+ggplot(df, aes(SIM,Z)) +
+  geom_point() +
+  theme_bw() 
+
+# pool chem similarity into three groups
+df$simGp = unlist(llply(df$SIM, function(sim) { 
+      if(sim < .3) return('LOW') 
+      else if(sim >= .3 & sim < .7)    return('MED') else return('HIGH') 
+    }))
+
+### boxplot Z distribution by chemical similarity
+df$simGp = factor(df$simGp, levels=c('LOW','MED','HIGH'))
+ggplot(df, aes(x=simGp, y=Z, fill = simGp)) +
+  geom_boxplot() +
+  xlab('Chemical similarity') +
+  ylab('Biological similarity (Spearman Z score)') +
+  theme_bw() +
+  theme(legend.position='none') +
+  scale_fill_manual(values=c(
+            'HIGH' = 'deepskyblue4',
+            'MED' = 'deepskyblue3',
+            'LOW' = 'deepskyblue'
+  ))
+wilcox.test(subset(df,simGp == 'MED')$Z,subset(df,simGp == 'LOW')$Z)
+wilcox.test(subset(df,simGp == 'HIGH')$Z,subset(df,simGp == 'MED')$Z)
+
+
+# variation of correlation with biological sim thresholds
+# cors_bio = ldply(-5:15,function(t) {
+#   test = try(cor.test(simdf[zdf$Z >= t,]$SIM,zdf[zdf$Z >= t,]$Z, method = 'spearman'),silent = TRUE)
+#   if(class(test) != 'try-error') {
+#     if(!is.na(test$p.value) & test$p.value > .05) test$estimate = 0
+#     return(data.frame(t = t, r=test$estimate, pval = round(test$p.value,4), n = length(which(zdf$Z >= t))))
+#   }   
+# })
+
+# 
+# # variation of correlation with biological sim thresholds
+# ggplot(cors_bio,aes(x=t,y=r)) +
+#   geom_point() +
+#   geom_line() +
+#   ylab('Spearman r') +
+#   xlab('Z threshold') +
+#   ylim(0,1) +
+#   theme_bw()
+# 
+# # strongest correlation
+# df = data.frame(Tanimoto=simdf[which(zdf$Z >= 11),'SIM'],SpearmanZ=zdf[which(zdf$Z >= 11),'Z'])
+# ggplot(df,aes(x=Tanimoto,y=SpearmanZ)) +
+#   geom_point() +
+#   geom_smooth(se=F,method=lm) +
+#   ylab('Spearman Z') +
+#   theme_bw()
+# pandoc.table(cors_bio[cors_bio$t == 11,])
+# 
+# # scatter plot corresponding to t = 11
+# #df = data.frame(Tanimoto = simdf[zdf$Z >= 11,]$value, Z = zdf[zdf$Z >= 11,]$Z)
+# #ggplot(df, aes(y=Tanimoto,x=Z)) +
+# #  geom_point() +
+# #  theme_bw() 
+# 
+# #variation of correlation with chemical sim thresholds
+# cors_chem = llply(seq(0,1,.1),function(t) {
+#   cor(simdf[simdf$SIM >= t,]$SIM,zdf[simdf$SIM >= t,]$Z, method = 'spearman')  
+# }) 
+# plot(seq(0,1,.1),cors_chem,type='b') # errrrrr, bad!
+# 
+# 
+# # variation of correlation with thresholds on both spaces
+# cors = ldply(seq(0,1,.1), function(t1) {
+#           ldply(seq(-5,15,1), function(t2) {
+#             data.frame(t1=t1,
+#                        t2=t2,
+#                        r=cor(simdf[simdf$SIM >= t1 & zdf$Z >= t2,]$SIM,
+#                              zdf[simdf$SIM >= t1 &  zdf$Z >= t2,]$Z, 
+#                              method = 'spearman'),
+#                        n=length(which(simdf$SIM >= t1 & zdf$Z >= t2)))  
+#         })
+# })
+# cors = subset(cors, n >= 5 & !is.na(r))
+# ggplot(cors, aes(x=as.factor(t1),y=as.factor(t2),fill=r)) +
+#   geom_raster() +
+#   scale_fill_gradient2(low='blue',mid='white',high='red',limits=c(-1,1))
+# 
+
+```
+
+
+```{r Cor_thresholds, echo=F, results = 'asis'}
+df2 = merge(simdf,zdf,by=c('SPID1','SPID2'))
+med_diffs = ldply(seq(.2,.8,by=.01), function(t) {
+      df2$simGp = unlist(llply(df$SIM, function(sim) { 
+        if(sim < t) return('LOW')  
+        else return('HIGH') 
+      }))
+      pval = wilcox.test(subset(df2,simGp == 'HIGH')$Z,subset(df2,simGp == 'LOW')$Z)$p.value
+      if(pval > 0.001) 
+        return(0)
+      else {
+        med = median(subset(df2,simGp == 'HIGH')$Z) - median(subset(df2,simGp == 'LOW')$Z) 
+        return(data.frame(t=t,med=med,pval=pval))    
+      }
+})
+# Chemical similarity threshold and effect on biosimilarity difference
+# there is a small jump at Tanimoto 0.68
+ggplot(med_diffs,aes(x=t,y=med)) +
+  geom_point()+
+  geom_line() +
+  theme_bw() +
+  xlab('Chemical dissimilarity threshold (Tanimoto)') +
+  ylab('Biological dissimilarity (Median(Z1) - Median(Z2))') +
+  ylim(0,2)
+
+```
+
+
+# 5. Cluster specific correlations
+
+```{r IntraClus, echo=F, results = 'asis'}
+intraClus_sims = ddply(chems,.(CLUSTER_ID),function(df) {
+  if (nrow(df) > 1) {
+    biosim = zmat[df$SPID,df$SPID]
+    biosim = median(unlist(biosim[upper.tri(biosim)]))
+    chemsim = sim[df$SPID,df$SPID]
+    chemsim = median(unlist(chemsim[upper.tri(chemsim)]))
+    return(data.frame(biosim,chemsim))
+  }
+})
+# histogram
+ggplot(intraClus_sims, aes(x=biosim)) +
+  geom_histogram(binwidth=0.7) +
+  theme_bw() +
+  xlab('Biological similarity (Spearman Z score)')
+#histogram  
+ggplot(intraClus_sims, aes(x=chemsim)) +
+  geom_histogram(binwidth=.07) +
+  theme_bw() + 
+  xlab('Chemical similarity (Tanimoto)')
+
+
+
+pandoc.table(intraClus_sims[with(intraClus_sims,order(chemsim,biosim,decreasing = T)),])
+
+# 
+ggplot(intraClus_sims, aes(y=biosim,x=chemsim, colour=biosim)) +
+  geom_point() +
+  xlim(0,1) +
+  scale_colour_gradient(name='Biological Similarity',low='black',high='red') + 
+  theme_bw() +
+  ylab('Biological similarity') +
+  xlab('Chemical similarity (Tanimoto)') +
+  geom_text(aes(label=ifelse((chemsim >= .7 & biosim >= 5) | biosim < 0 | biosim > 10,as.character(CLUSTER_ID),'')),hjust=1,vjust=0) 
+  #guide_legend(title='Biological similarity')
+
+```
+
+```{r Cluster18, echo=F, results = 'asis'}
+
+
+chems18 = subset(chems,CLUSTER_ID == 18)
+NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems18))+2]) > 0),as.numeric(rownames(chems18))+2] # no target predicted for these compounds
+acid = names(which(nscores[[chems18$SPID[1]]] > 80 & nscores[[chems18$SPID[2]]] > 80))
+subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
+
+```
+
+```{r Cluster26, echo=F, results = 'asis'}
+
+chems26 = subset(chems,CLUSTER_ID == 26)
+NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems26))+2]) > 0),as.numeric(rownames(chems26))+2] # one target predicted for Cytoxan, none for Methimazole
+acid = names(which(nscores[[chems26$SPID[1]]] > 80 & nscores[[chems26$SPID[2]]] > 80))
+subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
+
+```
+
+```{r Cluster 16, echo=F, results = 'asis'}
+
+chems16 = subset(chems,CLUSTER_ID == 16)
+NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems16))+2]) > 0),as.numeric(rownames(chems16))+2] # one target predicted for Cytoxan, none for Methimazole
+acid = names(which(nscores[[chems16$SPID[1]]] > 80 & nscores[[chems16$SPID[2]]] > 80))
+subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
+
+```
+
+```{r Cluster 8, echo=F, results = 'asis'}
+chems8 = subset(chems,CLUSTER_ID == 8)
+NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems8))+2]) > 0),as.numeric(rownames(chems8))+2] # one target predicted for Cytoxan, none for Methimazole
+acid = names(which(nscores[[chems8$SPID[1]]] > 80 & nscores[[chems8$SPID[2]]] > 80 & nscores[[chems8$SPID[3]]] > 80))
+subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
+
+```
+
+```{r Cluster 17, echo=F, results = 'asis'}
+chems17 = subset(chems,CLUSTER_ID == 17)
+NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems17))+2]) > 0),as.numeric(rownames(chems17))+2] # one target predicted for Cytoxan, none for Methimazole
+acid = names(which(nscores[[chems17$SPID[1]]] > 80 & nscores[[chems17$SPID[2]]] > 80))
+subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
+plot(nscores[[chems17$SPID[1]]],type='l')
+```
+
+

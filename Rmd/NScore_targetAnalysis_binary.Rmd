@@ -35,6 +35,12 @@ options(formatR.arrow=TRUE,width=90,stringsAsFactors = F)
 #setwd('/home/az338/bioseek_Xitong_Ellen/NScore_cliques/') #Calculon path
 DATA_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/NScore_cliques//data/'
 
+# load chem dataset
+chems=read.table(file.path(DATA_DIR,'smiles_NScore.tab'),h=T,sep='\t',comment.char='',quote='"',stringsAsFactors=F)
+#duplicated_spid = chems[which(duplicated(chems$smiles)),'SPID']
+#duplicated_chemIdx = which(duplicated(chems$smiles))
+#chems = chems[which(!duplicated(chems$smiles)),]
+
 # load script for pathway annotations of targets
 source('/scratch/az338/ucc-fileserver/ucc_az/global_tools/uniprot_to_pathway.R')
 ```
@@ -103,8 +109,6 @@ display_clusTargets = function(NScore_pred) {
 
 ```{r ClusterAnalysis_Accuracy, echo=F, results='asis'}
 
-# load chem dataset
-chems=read.table(file.path(DATA_DIR,'smiles_NScore.tab'),h=T,sep='\t',comment.char='',quote='"',stringsAsFactors=F)
 
 # load target predictions with 
 # probability cutoffs based on accuracy
@@ -137,60 +141,6 @@ NSPred_f = NScore_pred[,]
 # by all members/chemicals of the cluster
 # and store their uniprot id
 clusUniprot_f = display_clusTargets(NSPred_f)
-
-```
-
-### Chemical similarity
-
-```{r globalchemSimilarity}
-# generate ecfp4 fingerprints 
-mol = readMolFromSmi(file.path(DATA_DIR,'smiles_NScore_ST_corrected.smi'),type='mol')
-fps = extractDrugExtendedComplete(mol,depth=4)
-
-
-# compute tanimoto similarity
-sim = laply(1:nrow(fps), function(x) {
-  return(laply(1:nrow(fps), function(y) {
-    return(calcDrugFPSim(fps[x,],fps[y,],fptype='complete',metric='tanimoto'))    
-  }))
-})
-
-# distribution of tanimoto coeffs
-hist(sim)
-
-# summary of data range
-fivenum(sim)
-
-
-```
-
-```{r intraSimClust}
-rownames(sim) = colnames(sim) = chems$SPID
-medians = dlply(chems, .(CLUSTER_ID), function(df) {
-   mat = sim[df$SPID,df$SPID]
-   median(mat)
-})
-n_compounds = dlply(chems, .(CLUSTER_ID), function(df) {
-   mat = sim[df$SPID,df$SPID]
-   n = nrow(mat)
-   if(is.null(n)) n=1
-   return(n)
-})
-intra_med = data.frame(Cluster=names(medians),Med=unlist(medians),n=unlist(n_compounds))
-
-# intra cluster similarity and were the BioMap clusters fit
-ggplot(intra_med,aes(x=Med)) + 
-  geom_histogram(binwidth=0.2) +
-  xlim(0,1) +
-  geom_vline(aes(xintercept = unlist(medians['22'])),col='red') +
-  geom_vline(aes(xintercept = unlist(medians['44'])),col='darkolivegreen') +
-  geom_vline(aes(xintercept = unlist(medians['45'])),col='darkgoldenrod') +
-  geom_vline(aes(xintercept = unlist(medians['72'])),col='steelblue') +
-  xlab('Intra cluster median similarity') +
-  theme_bw()
-
-intra_med[order(intra_med$Med,decreasing = T),][1:10,]
-
 
 ```
 
