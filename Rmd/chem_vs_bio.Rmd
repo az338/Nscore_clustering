@@ -492,6 +492,28 @@ ggplot(intraClus_sims, aes(y=biosim,x=chemsim, colour=biosim)) +
 
 ```
 
+
+```{r Cluster22, echo=F}
+chems22 = subset(chems,CLUSTER_ID == 22)
+moa22 = NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems22))+2]) > 0),as.numeric(rownames(chems22))+2] # no target predicted for these compounds
+rowSums(moa22)-1
+nrow(moa22)
+```
+
+```{r Cluster 45, echo=F}
+chems45 = subset(chems,CLUSTER_ID == 45)
+moa45=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems45))+2]) > 0),as.numeric(rownames(chems45))+2] # no target predicted for these compounds
+rowSums(moa45)-1
+nrow(moa45)
+```
+
+```{r Cluster 72, echo=F}
+chems72 = subset(chems,CLUSTER_ID == 72)
+moa72=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems72))+2]) > 0),as.numeric(rownames(chems72))+2] # no target predicted for these compounds
+length(which(rowSums(moa72)-1 == 1))
+nrow(moa72)
+```
+
 ```{r Cluster18, echo=F, results = 'asis'}
 
 
@@ -505,7 +527,7 @@ subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
 ```{r Cluster26, echo=F, results = 'asis'}
 
 chems26 = subset(chems,CLUSTER_ID == 26)
-NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems26))+2]) > 0),as.numeric(rownames(chems26))+2] # one target predicted for Cytoxan, none for Methimazole
+moa26=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems26))+2]) > 0),as.numeric(rownames(chems26))+2] # one target predicted for Cytoxan, none for Methimazole
 acid = names(which(nscores[[chems26$SPID[1]]] > 80 & nscores[[chems26$SPID[2]]] > 80))
 subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
 
@@ -514,7 +536,7 @@ subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
 ```{r Cluster 16, echo=F, results = 'asis'}
 
 chems16 = subset(chems,CLUSTER_ID == 16)
-NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems16))+2]) > 0),as.numeric(rownames(chems16))+2] # one target predicted for Cytoxan, none for Methimazole
+moa16=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems16))+2]) > 0),as.numeric(rownames(chems16))+2] # one target predicted for Cytoxan, none for Methimazole
 acid = names(which(nscores[[chems16$SPID[1]]] > 80 & nscores[[chems16$SPID[2]]] > 80))
 subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
 
@@ -530,7 +552,7 @@ subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
 
 ```{r Cluster 17, echo=F, results = 'asis'}
 chems17 = subset(chems,CLUSTER_ID == 17)
-NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems17))+2]) > 0),as.numeric(rownames(chems17))+2] # one target predicted for Cytoxan, none for Methimazole
+moa17=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems17))+2]) > 0),as.numeric(rownames(chems17))+2] # one target predicted for Cytoxan, none for Methimazole
 acid = names(which(nscores[[chems17$SPID[1]]] > 80 & nscores[[chems17$SPID[2]]] > 80))
 subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
 plot(nscores[[chems17$SPID[1]]],type='l')
