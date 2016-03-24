@@ -75,6 +75,12 @@ sm = fivenum(sim[upper.tri(sim)])
 names(sm) = c('min','25%','median','75%','max')
 pandoc.table(sm)
 
+# compute ZScore similarity
+zsim = (sim - mean(sim)) / sd(sim)
+hist(zsim)
+
+# correlation similarity - Zscore
+plot(sim,zsim)
 
 ```
 
@@ -228,7 +234,7 @@ ggplot(zdf2, aes(x=SPID1,y=SPID2, fill = Z)) +
 
 pvals = read.csv(file.path(DATA_DIR,'median_act_diffs_HLM_and_pvals.csv'),h=T)
 
-nrow(subset(pvals,pLM < .001 | pHM < .001)) # 50 assays which have different biosimilarity in function of the chem similarity
+nrow(subset(pvals,pLM < .001 | pHM < .001)) # 51 assays which have different biosimilarity in function of the chem similarity
 nrow(subset(pvals,pLM < .001 & pHM < .001)) # 10 assays have a strong relationship between biosimilarity and chem sim
 str_rel_assays = subset(pvals,pLM < .001 & pHM < .001)$ACID
 
@@ -348,17 +354,6 @@ df$simGp = unlist(llply(df$SIM, function(sim) {
 
 ### boxplot Z distribution by chemical similarity
 df$simGp = factor(df$simGp, levels=c('LOW','MED','HIGH'))
-ggplot(df, aes(x=simGp, y=Z, fill = simGp)) +
-  geom_boxplot() +
-  xlab('Chemical similarity') +
-  ylab('Biological similarity (Spearman Z score)') +
-  theme_bw() +
-  theme(legend.position='none') +
-  scale_fill_manual(values=c(
-            'HIGH' = 'deepskyblue4',
-            'MED' = 'deepskyblue3',
-            'LOW' = 'deepskyblue'
-  ))
 wilcox.test(subset(df,simGp == 'MED')$Z,subset(df,simGp == 'LOW')$Z)
 wilcox.test(subset(df,simGp == 'HIGH')$Z,subset(df,simGp == 'MED')$Z)
 
@@ -426,8 +421,8 @@ wilcox.test(subset(df,simGp == 'HIGH')$Z,subset(df,simGp == 'MED')$Z)
 
 ```{r Cor_thresholds, echo=F, results = 'asis'}
 df2 = merge(simdf,zdf,by=c('SPID1','SPID2'))
-med_diffs = ldply(seq(.2,.8,by=.01), function(t) {
-      df2$simGp = unlist(llply(df$SIM, function(sim) { 
+med_diffs = ldply(seq(0.1,0.9,by=.01), function(t) {
+      df2$simGp = unlist(llply(df2$SIM, function(sim) { 
         if(sim < t) return('LOW')  
         else return('HIGH') 
       }))
@@ -436,7 +431,7 @@ med_diffs = ldply(seq(.2,.8,by=.01), function(t) {
         return(0)
       else {
         med = median(subset(df2,simGp == 'HIGH')$Z) - median(subset(df2,simGp == 'LOW')$Z) 
-        return(data.frame(t=t,med=med,pval=pval))    
+        return(data.frame(t=t,med=med,pval=pval,nH=nrow(subset(df2,simGp == 'HIGH')),nL=nrow(subset(df2,simGp == 'LOW'))))    
       }
 })
 # Chemical similarity threshold and effect on biosimilarity difference
@@ -445,8 +440,8 @@ ggplot(med_diffs,aes(x=t,y=med)) +
   geom_point()+
   geom_line() +
   theme_bw() +
-  xlab('Chemical dissimilarity threshold (Tanimoto)') +
-  ylab('Biological dissimilarity (Median(Z1) - Median(Z2))') +
+  xlab('Chemical similarity threshold (Tanimoto)') +
+  ylab('Biological dissimilarity (Median Z High - Median Z Low)') +
   ylim(0,2)
 
 ```
@@ -495,39 +490,60 @@ ggplot(intraClus_sims, aes(y=biosim,x=chemsim, colour=biosim)) +
 
 ```{r Cluster22, echo=F}
 chems22 = subset(chems,CLUSTER_ID == 22)
-moa22 = NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems22))+2]) > 0),as.numeric(rownames(chems22))+2] # no target predicted for these compounds
+moa22 = NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems22))+2]) > 0),c(1,2,as.numeric(rownames(chems22))+2)] # no target predicted for these compounds
 rowSums(moa22)-1
 nrow(moa22)
+
+# get peaks
+subset(biomap,SPID == 'TX005086' & CONC == 40)
+subset(sigenv,ACID %in% c(146,149,194,147,189,186,145,159,165,153,167,150,156,166,155,163))
+
+subset(biomap,SPID == 'TX010008' & CONC == 37.6)
+subset(sigenv,ACID %in% c(147,189,167,194,165,186,149,146,153,150,156,166,163))
+
 ```
 
 ```{r Cluster 45, echo=F}
 chems45 = subset(chems,CLUSTER_ID == 45)
-moa45=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems45))+2]) > 0),as.numeric(rownames(chems45))+2] # no target predicted for these compounds
+moa45=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems45))+2]) > 0),c(1,2,as.numeric(rownames(chems45))+2)] # no target predicted for these compounds
 rowSums(moa45)-1
 nrow(moa45)
+
+subset(biomap,SPID == 'TX008373' & CONC == 13.9)
+subset(sigenv,ACID %in% c(167,189,194,199,170,163,186,155))
+
 ```
 
 ```{r Cluster 72, echo=F}
 chems72 = subset(chems,CLUSTER_ID == 72)
-moa72=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems72))+2]) > 0),as.numeric(rownames(chems72))+2] # no target predicted for these compounds
+moa72=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems72))+2]) > 0),c(1,2,as.numeric(rownames(chems72))+2)] # no target predicted for these compounds
 length(which(rowSums(moa72)-1 == 1))
 nrow(moa72)
+
+subset(biomap,SPID == 'TX008422' & CONC == 20)
 ```
 
 ```{r Cluster18, echo=F, results = 'asis'}
 
 
 chems18 = subset(chems,CLUSTER_ID == 18)
-NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems18))+2]) > 0),as.numeric(rownames(chems18))+2] # no target predicted for these compounds
+NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems18))+2]) > 0),c(1,2,as.numeric(rownames(chems18))+2)] # no target predicted for these compounds
 acid = names(which(nscores[[chems18$SPID[1]]] > 80 & nscores[[chems18$SPID[2]]] > 80))
 subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
+
+# get peaks
+subset(biomap,SPID == 'TX003303' & CONC == 20.9)
+subset(sigenv,ACID %in% c(167, 120, 144))
+
+subset(biomap,SPID == 'TX009647' & CONC == 20)
+subset(sigenv,ACID == 167)
 
 ```
 
 ```{r Cluster26, echo=F, results = 'asis'}
 
 chems26 = subset(chems,CLUSTER_ID == 26)
-moa26=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems26))+2]) > 0),as.numeric(rownames(chems26))+2] # one target predicted for Cytoxan, none for Methimazole
+moa26=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems26))+2]) > 0),c(1,2,as.numeric(rownames(chems26))+2)] # one target predicted for Cytoxan, none for Methimazole
 acid = names(which(nscores[[chems26$SPID[1]]] > 80 & nscores[[chems26$SPID[2]]] > 80))
 subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
 
@@ -536,26 +552,151 @@ subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
 ```{r Cluster 16, echo=F, results = 'asis'}
 
 chems16 = subset(chems,CLUSTER_ID == 16)
-moa16=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems16))+2]) > 0),as.numeric(rownames(chems16))+2] # one target predicted for Cytoxan, none for Methimazole
+moa16=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems16))+2]) > 0),c(1,2,as.numeric(rownames(chems16))+2)] # one target predicted for Cytoxan, none for Methimazole
 acid = names(which(nscores[[chems16$SPID[1]]] > 80 & nscores[[chems16$SPID[2]]] > 80))
 subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
+
+# get peaks
+subset(biomap,SPID == 'TX007246' & CONC == 13.3)
+subset(sigenv,ACID == 167)
+
 
 ```
 
 ```{r Cluster 8, echo=F, results = 'asis'}
 chems8 = subset(chems,CLUSTER_ID == 8)
-NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems8))+2]) > 0),as.numeric(rownames(chems8))+2] # one target predicted for Cytoxan, none for Methimazole
+NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems8))+2]) > 0),c(1,2,as.numeric(rownames(chems8))+2)] 
 acid = names(which(nscores[[chems8$SPID[1]]] > 80 & nscores[[chems8$SPID[2]]] > 80 & nscores[[chems8$SPID[3]]] > 80))
 subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
+
+# get peaks
+subset(biomap,SPID == 'TV000251' & CONC == 13.333333)
+subset(sigenv,ACID == 186)
+
+subset(biomap,SPID == 'TV000198' & CONC == 13.333333)
+subset(sigenv,ACID == 188)
+
+subset(biomap,SPID == 'TX008510' & CONC == 13.3)
+subset(sigenv, ACID %in% c("162","123","163","170"))
 
 ```
 
 ```{r Cluster 17, echo=F, results = 'asis'}
 chems17 = subset(chems,CLUSTER_ID == 17)
-moa17=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems17))+2]) > 0),as.numeric(rownames(chems17))+2] # one target predicted for Cytoxan, none for Methimazole
+moa17=NSPred_a[which(rowSums(NSPred_a[,as.numeric(rownames(chems17))+2]) > 0),c(1,2,as.numeric(rownames(chems17))+2)] # one target predicted for Cytoxan, none for Methimazole
 acid = names(which(nscores[[chems17$SPID[1]]] > 80 & nscores[[chems17$SPID[2]]] > 80))
 subset(sigenv, ACID %in% acid) #biological activity : immune system/inflammation
 plot(nscores[[chems17$SPID[1]]],type='l')
+
+subset(biomap,SPID == 'TX008556' & CONC == 4.44)
+subset(sigenv,ACID %in% c(166,193,124,180))
+
 ```
+
+```{r}
+#BioMAP profile overlaying function
+overlayBioMAP = function(cluster,conc=NA) {
+  cls = chems[chems$CLUSTER_ID == cluster,'SPID']
+  subbiomap = subset(biomap, SPID %in% cls)
+  
+  if(is.na(conc)) {
+    ggplot(subbiomap, aes(x=ACID,y=RVAL,color=SPID)) +
+      geom_line() +
+      ylim(-1.5,1.5) +
+      facet_wrap(~CONC) +
+      theme_bw() +
+      xlab('Assays') +
+      ylab('Protein expression (log ratio)') +
+
+      theme(axis.text.x = element_blank())
+  } else {
+    subbiomap$PROFILE = paste(subbiomap$SPID,',',subbiomap$CONC,'uM',sep='')
+    ggplot(subset(subbiomap, CONC %in% conc), aes(x=ACID,y=RVAL,color=PROFILE)) +
+      geom_line() +
+      ylim(-1.5,1.5) +
+      theme_bw() +
+      xlab('Assays') +
+      ylab('Protein expression (log ratio)') +
+      theme(axis.text.x = element_blank())  
+  }
+}
+
+```
+
+
+```{r compare profiles cluster 26, echo=F}
+# profile overlap for compounds with high biosimilarity but weak chem sim
+overlayBioMAP(26,40)
+```
+
+```{r compare profiles cluster middle, echo=F}
+overlayBioMAP(14,20)
+overlayBioMAP(11,13.30)
+overlayBioMAP(41,13.30)
+overlayBioMAP(37,4.44)
+overlayBioMAP(68,13.3)
+```
+
+```{r compare profiles cluster low chesim low biosim, echo=F}
+overlayBioMAP(8,c(13.3,13.333333))
+overlayBioMAP(16,13.3)
+overlayBioMAP(17,4.44)
+```
+
+```{r compare profiles cluster high chemsim high biosim, echo=F}
+overlayBioMAP(22,c(37.6,40))
+overlayBioMAP(45,c(13.30,13.90))
+overlayBioMAP(18,c(20,20.9))
+overlayBioMAP(72,c(20))
+```
+
+```{r overlay biomap profiles for selected clusters post clustering, echo=F}
+
+# add chemicals that were predicted as associated to clusters
+chems2 = data.frame(SPID=c('TX005784','TX003453','TX003725','TX003824','TX004423','TX008213','TX008327','TX009320','TX011636','TX004341','TX006088','TX008476','TX008838','TX009751','TX009791','TX012532'),
+                    AGENT_NAME=c('Prednisone','Sodium tetradecyl sulfate','Sodium Dodecyl Sulfate','Sodium hexyldecyl sulfate','4-Heptylphenol','Butyryl trihexyl citrate','4-Nonylphenol','Tris(2-ethylhexyl) phosphate','Fully acetylated glycerol monoester on 12-hydroxystearic acid','17alpha-Hydroxyprogesterone','17alpha-Estradiol','beta-Estradiol','Progesterone','4-Androstene-3,17-dione','17-Methyltestosterone','5alpha-Dihydrotestosterone'),
+                    EPA_PHASE=NA,
+                    CLUSTER_ID=c(22,72,72,72,72,72,72,72),
+                    NUM_CONC=NA,
+                    ids.sa_gsid=NA,
+                    smiles=NA) 
+chems2 = rbind(chems,chems2)
+
+# load BioMap dataset and get profiles for 'new' compounds
+biomap2 = read.csv(file.path(DATA_DIR,'BSK_TOXCAST_NSCORE_export.csv'),header=T)
+biomap2 = subset(biomap2,SPID %in% chems2$SPID)  # filter to those that are in the biomap dataset
+
+
+overlayBioMAP2 = function(cluster,conc=NA) {
+  cls = chems2[chems2$CLUSTER_ID == cluster,'SPID']
+  subbiomap = subset(biomap2, SPID %in% cls)
+  
+  if(is.na(conc)) {
+    ggplot(subbiomap, aes(x=ACID,y=RVAL,color=SPID)) +
+      geom_line() +
+      ylim(-1.5,1.5) +
+      facet_wrap(~CONC) +
+      theme_bw() +
+      xlab('Assays') +
+      ylab('Protein expression (log ratio)') +
+
+      theme(axis.text.x = element_blank())
+  } else {
+    subbiomap$PROFILE = paste(subbiomap$SPID,',',subbiomap$CONC,'uM',sep='')
+    ggplot(subset(subbiomap, CONC %in% conc), aes(x=ACID,y=RVAL,color=PROFILE)) +
+      geom_line() +
+      ylim(-1.5,1.5) +
+      theme_bw() +
+      xlab('Assays') +
+      ylab('Protein expression (log ratio)') +
+      theme(axis.text.x = element_blank())  
+  }
+}
+
+overlayBioMAP2(22,c(37.6,40))
+overlayBioMAP2(72,c(8.7,10,13.3,18.3))
+
+```
+
 
 

@@ -1,0 +1,41 @@
+---
+output:
+  word_document: default
+  html_document:
+    highlight: tango
+    keep_md: yes
+    theme: united
+    toc: no
+---
+
+```{r setup, include=FALSE, cache=FALSE}
+library(knitr)
+library(pander)
+
+library(plyr)
+library(reshape2)
+library(Rcpi)
+## library(RColorBrewer)
+## library(gridExtra)
+library(gplots)
+library(ggplot2)
+library(GGally)
+
+FIG_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/NScore_cliques/figures/'
+
+# set global chunk options
+opts_chunk$set(fig.path=FIG_DIR, fig.width=12,fig.height=12, fig.show='hold')
+options(formatR.arrow=TRUE,width=90,stringsAsFactors = F)
+
+# set working directory
+#setwd('C:/Users//Azedine/Dropbox/ucc_az/bioseek_Xitong_Ellen/') # Windows path
+#setwd('/home/az338/bioseek_Xitong_Ellen/NScore_cliques/') #Calculon path
+DATA_DIR='/scratch/az338/ucc-fileserver/ucc_az//bioseek_Xitong_Ellen/NScore_cliques//data/'
+
+# load chem dataset
+chems=read.table(file.path(DATA_DIR,'smiles_NScore.tab'),h=T,sep='\t',comment.char='',quote='"',stringsAsFactors=F)
+
+```
+
+
+
